@@ -92,7 +92,10 @@
     "error_not_found": "Server address invalid or management API not enabled",
     "error_server": "Internal server error, please try again later",
     "error_cors": "Cross-origin request blocked, please check server configuration",
-    "error_ssl": "SSL/TLS certificate verification failed"
+    "error_ssl": "SSL/TLS certificate verification failed",
+    "error_static_site": "Current address is serving a static site, not the CLIProxyAPI Management API. Enter the real backend API base.",
+    "hide_key": "Hide key",
+    "show_key": "Show key"
   },
   "header": {
     "check_connection": "Check Connection",
@@ -116,7 +119,8 @@
     "usage_stats": "Usage Statistics",
     "config_management": "Config Panel",
     "logs": "Logs Viewer",
-    "system_info": "Management Center Info"
+    "system_info": "Management Center Info",
+    "access_keys": "Access Keys"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -440,7 +444,11 @@
     "openai_test_all_hint": "Test connection status for all keys",
     "openai_test_all_success": "All {{count}} keys passed the test",
     "openai_test_all_failed": "All {{count}} keys failed the test",
-    "openai_test_all_partial": "Test completed: {{success}} passed, {{failed}} failed"
+    "openai_test_all_partial": "Test completed: {{success}} passed, {{failed}} failed",
+    "ampcode_clear_upstream_api_key_title": "Clear Upstream API Key",
+    "gemini_delete_title": "Delete Gemini Key",
+    "vertex_delete_title": "Delete Vertex Config",
+    "openai_delete_title": "Delete OpenAI Provider"
   },
   "auth_files": {
     "title": "Auth Files Management",
@@ -576,7 +584,9 @@
     "prefix_proxy_invalid_json": "This auth file is not a JSON object, so fields cannot be edited.",
     "prefix_proxy_saved_success": "Updated auth file \"{{name}}\" successfully",
     "quota_refresh_success": "Quota refreshed for \"{{name}}\"",
-    "quota_refresh_failed": "Failed to refresh quota for \"{{name}}\": {{message}}"
+    "quota_refresh_failed": "Failed to refresh quota for \"{{name}}\": {{message}}",
+    "delete_title": "Delete File",
+    "delete_all_title": "Delete All Files"
   },
   "antigravity_quota": {
     "title": "Antigravity Quota",
@@ -736,7 +746,8 @@
     "scope_provider": "Scope: {{provider}}",
     "upgrade_required": "Current CPA version does not support OAuth model disablement. Please upgrade.",
     "upgrade_required_title": "Please upgrade CLI Proxy API",
-    "upgrade_required_desc": "The current server version does not support fetching OAuth model disablement. Please upgrade to the latest CPA (CLI Proxy API) version and try again."
+    "upgrade_required_desc": "The current server version does not support fetching OAuth model disablement. Please upgrade to the latest CPA (CLI Proxy API) version and try again.",
+    "delete_title": "Delete Exclusion"
   },
   "oauth_model_alias": {
     "title": "OAuth Model Aliases",
@@ -798,7 +809,8 @@
     "provider_required": "Please enter a provider first",
     "upgrade_required": "This feature requires a newer CLI Proxy API (CPA) version. Please upgrade.",
     "upgrade_required_title": "Please upgrade CLI Proxy API",
-    "upgrade_required_desc": "The current server does not support the OAuth model aliases API. Please upgrade to the latest CLI Proxy API (CPA) version."
+    "upgrade_required_desc": "The current server does not support the OAuth model aliases API. Please upgrade to the latest CLI Proxy API (CPA) version.",
+    "delete_title": "Delete Mappings"
   },
   "auth_login": {
     "codex_oauth_title": "Codex OAuth",
@@ -910,7 +922,8 @@
     "iflow_cookie_result_expired": "Expires At",
     "iflow_cookie_result_path": "Saved Path",
     "iflow_cookie_result_type": "Type",
-    "remote_access_disabled": "This login method is not available for remote access. Please access from localhost."
+    "remote_access_disabled": "This login method is not available for remote access. Please access from localhost.",
+    "oauth_open_invalid_url": "The OAuth link is unsafe and has been blocked."
   },
   "usage_stats": {
     "title": "Usage Statistics",
@@ -1110,7 +1123,8 @@
     "lines": "lines",
     "removed": "Filtered",
     "upgrade_required_title": "Please Upgrade CLI Proxy API",
-    "upgrade_required_desc": "The current server version does not support the logs viewing feature. Please upgrade to the latest version of CLI Proxy API to use this feature."
+    "upgrade_required_desc": "The current server version does not support the logs viewing feature. Please upgrade to the latest version of CLI Proxy API to use this feature.",
+    "clear_confirm_title": "Clear Logs"
   },
   "config_management": {
     "title": "Config Panel",
@@ -1442,12 +1456,142 @@
   },
   "sidebar": {
     "toggle_expand": "Expand sidebar",
-    "toggle_collapse": "Collapse sidebar"
+    "toggle_collapse": "Collapse sidebar",
+    "expand": "Expand",
+    "collapse": "Collapse"
   },
   "footer": {
     "api_version": "CLI Proxy API Version",
     "build_date": "Build Time",
     "version": "Management UI Version",
     "author": "Author"
+  },
+  "access_keys_page": {
+    "load_error": "Failed to load access keys.",
+    "empty_error": "Please enter an access key.",
+    "duplicate_error": "This access key already exists.",
+    "added_success": "New access key added.",
+    "updated_success": "Access key updated.",
+    "save_error": "Unable to save the access key.",
+    "confirm_delete_title": "Delete access key",
+    "confirm_delete_body": "This client key will stop working immediately after removal.",
+    "deleted_success": "Access key deleted.",
+    "delete_error": "Unable to delete the access key.",
+    "confirm_rotate_title": "Rotate access key",
+    "confirm_rotate_body": "The old key will stop working as soon as the new one is saved.",
+    "rotate_confirm": "Rotate",
+    "rotated_success": "Access key rotated.",
+    "rotate_error": "Unable to rotate the access key.",
+    "copy_success": "Access key copied to clipboard.",
+    "copy_failed": "Copy failed.",
+    "title": "Access Keys",
+    "description": "Manage the client keys that your web users or CLI tools will use to call the proxy.",
+    "add_key": "Add key",
+    "total_client_keys": "Total client keys",
+    "generated_in_panel": "Generated by this panel",
+    "offline": "Offline",
+    "ready": "Ready",
+    "management_connection": "Management connection",
+    "list_title": "Key list",
+    "list_hint": "These keys map to the top-level `api-keys` list in CLIProxyAPI.",
+    "loading": "Loading access keys...",
+    "empty": "No client keys yet. Create one here, then distribute it to your CLI users.",
+    "key_title": "Client key #{{index}}",
+    "generated_badge": "Generated in panel",
+    "imported_badge": "Imported or custom",
+    "hide": "Hide",
+    "show": "Show",
+    "copy": "Copy",
+    "edit": "Edit",
+    "rotate": "Rotate",
+    "delete": "Delete",
+    "recommended_flow": "Recommended flow",
+    "flow_1_title": "Create a client key",
+    "flow_1_desc": "This key is what your users paste into their third-party CLI tools.",
+    "flow_2_title": "Upload or login your accounts",
+    "flow_2_desc": "Use the Accounts and OAuth pages to add Codex, Claude, Gemini, Kimi or other credentials.",
+    "flow_3_title": "Watch quota and usage",
+    "flow_3_desc": "Check the Quota page for remaining turns and the Usage page for request/token analytics.",
+    "edit_key": "Edit access key",
+    "create_key": "Create access key",
+    "save_changes": "Save changes",
+    "access_key_label": "Access key",
+    "access_key_placeholder": "cpw_xxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "access_key_hint": "Use a memorable prefix if you want to know where the key came from.",
+    "generate_another": "Generate another"
+  },
+  "portal": {
+    "dashboard": {
+      "account_state_paused": "Paused",
+      "account_state_attention": "Needs attention",
+      "account_state_runtime_only": "Runtime only",
+      "account_state_ready": "Ready",
+      "client_access_keys": "Client access keys",
+      "client_access_keys_desc": "Keys for users and third-party CLI tools",
+      "stored_accounts": "Stored accounts",
+      "stored_accounts_desc": "{{count}} accounts ready for quota tracking",
+      "provider_routes": "Provider routes",
+      "provider_routes_breakdown": "Gemini {{gemini}} • Codex {{codex}} • Claude {{claude}} • OpenAI {{openai}}",
+      "provider_routes_desc": "Custom upstream and model routing",
+      "available_models_desc": "Detected through the proxy endpoint",
+      "eyebrow": "Web Proxy Control Center",
+      "hero_title": "Run your existing CLI proxy through a clean web panel",
+      "hero_subtitle": "Keep the original CLIProxyAPI logic untouched, then manage access keys, OAuth accounts, quota and usage from one browser dashboard.",
+      "open_quota_center": "Open quota center",
+      "manage_user_keys": "Manage user keys",
+      "view_accounts": "View accounts",
+      "connected": "Connected",
+      "connecting": "Connecting",
+      "disconnected": "Disconnected",
+      "built_on": "Built on {{date}}",
+      "routing": "Routing",
+      "usage_stats": "Usage stats",
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "websocket_auth": "WebSocket auth",
+      "retries": "Retries",
+      "accounts_title": "Your accounts",
+      "accounts_subtitle": "Upload credentials, see provider mix and jump into account-level troubleshooting.",
+      "open_accounts": "Open accounts",
+      "no_accounts_loaded": "No accounts loaded yet.",
+      "recent_accounts_empty": "Add or upload auth files, then this panel will list your latest accounts here.",
+      "workflow_title": "Daily workflow",
+      "workflow_subtitle": "These are the pages you will probably touch most when turning the CLI into a web proxy service.",
+      "issue_keys_title": "Issue keys to users",
+      "issue_keys_desc": "Create, rotate and distribute proxy keys without opening the raw YAML config.",
+      "quota_title": "Check remaining quota",
+      "quota_desc": "See remaining turns and reset windows for Claude, Codex, Gemini CLI, Kimi and more.",
+      "usage_title": "Track request usage",
+      "usage_desc": "Review tokens, requests, cost estimates and model breakdown across your traffic.",
+      "config_title": "Tune proxy behavior",
+      "config_desc": "Adjust retries, routing strategy, logging and deployment-facing settings from one place.",
+      "routing_snapshot_title": "Routing snapshot",
+      "routing_snapshot_subtitle": "Quick sanity check for the settings that affect user-facing reliability the most.",
+      "edit_config": "Edit config",
+      "debug_mode": "Debug mode",
+      "usage_statistics_label": "Usage statistics",
+      "logging_to_file": "Logging to file",
+      "request_retry": "Request retry",
+      "routing_strategy_label": "Routing strategy",
+      "force_model_prefix": "Force model prefix"
+    },
+    "login": {
+      "api_base_security_error": "Only HTTPS management APIs are allowed. HTTP is permitted only for localhost or 127.0.0.1.",
+      "cross_origin_confirm_title": "Confirm management key destination",
+      "cross_origin_confirm_body": "You are about to send the management key to a Management API on a different origin from this page.",
+      "cross_origin_confirm_action": "Continue",
+      "title": "ClipProxy Web Console",
+      "subtitle": "Connect to the CLIProxyAPI management endpoint to manage user keys, accounts, quota and usage from the browser.",
+      "detected_api_base": "Detected API base",
+      "detected_api_hint": "Same-origin address is auto-detected from this page.",
+      "override_api_base": "Override API base",
+      "api_base_url": "API base URL",
+      "api_base_placeholder": "https://example.com:8317",
+      "api_base_hint": "Use this if the backend is hosted on another domain, port or Cloudflare tunnel.",
+      "management_key": "Management key",
+      "management_key_placeholder": "Enter your management key",
+      "management_key_security_hint": "The management key stays only in this tab's memory and is never saved to browser storage.",
+      "connect": "Connect"
+    }
   }
 }

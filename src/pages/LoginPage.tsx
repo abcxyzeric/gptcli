@@ -16,6 +16,7 @@ import {
 } from '@/utils/connection';
 import { LANGUAGE_LABEL_KEYS, LANGUAGE_ORDER } from '@/utils/constants';
 import { isSupportedLanguage } from '@/utils/language';
+import { getApiBasePresetFromSearch, getRuntimeDefaultApiBase } from '@/utils/runtimeConfig';
 import { INLINE_LOGO_JPEG } from '@/assets/logoInline';
 import type { ApiError } from '@/types';
 import styles from './LoginPage.module.scss';
@@ -103,6 +104,8 @@ export function LoginPage() {
   const [error, setError] = useState('');
 
   const detectedBase = useMemo(() => detectApiBaseFromLocation(), []);
+  const runtimeDefaultBase = useMemo(() => getRuntimeDefaultApiBase(), []);
+  const presetApiBase = useMemo(() => getApiBasePresetFromSearch(location.search), [location.search]);
   const languageOptions = useMemo(
     () =>
       LANGUAGE_ORDER.map((lang) => ({
@@ -135,9 +138,9 @@ export function LoginPage() {
             navigate(redirect, { replace: true });
           }, 1500);
         } else {
-          const initialBase = storedBase || detectedBase;
+          const initialBase = presetApiBase || storedBase || runtimeDefaultBase || detectedBase;
           setApiBase(initialBase);
-          setShowCustomBase(Boolean(storedBase && normalizeApiBase(storedBase) !== detectedBase));
+          setShowCustomBase(Boolean(initialBase && normalizeApiBase(initialBase) !== detectedBase));
           setManagementKey('');
         }
       } finally {

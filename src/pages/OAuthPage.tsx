@@ -7,6 +7,7 @@ import { useNotificationStore, useThemeStore } from '@/stores';
 import { oauthApi, type OAuthProvider, type IFlowCookieAuthResponse } from '@/services/api/oauth';
 import { vertexApi, type VertexImportResponse } from '@/services/api/vertex';
 import { copyToClipboard } from '@/utils/clipboard';
+import { isSafeExternalUrl } from '@/utils/connection';
 import styles from './OAuthPage.module.scss';
 import iconCodex from '@/assets/icons/codex.svg';
 import iconClaude from '@/assets/icons/claude.svg';
@@ -204,6 +205,24 @@ export function OAuthPage() {
     );
   };
 
+  const openAuthLink = (url?: string) => {
+    if (!url) {
+      return;
+    }
+
+    if (!isSafeExternalUrl(url)) {
+      showNotification(
+        t('auth_login.oauth_open_invalid_url', {
+          defaultValue: 'Lien ket OAuth khong an toan va da bi chan.'
+        }),
+        'error'
+      );
+      return;
+    }
+
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
   const submitCallback = async (provider: OAuthProvider) => {
     const redirectUrl = (states[provider]?.callbackUrl || '').trim();
     if (!redirectUrl) {
@@ -399,7 +418,7 @@ export function OAuthPage() {
                         <Button
                           variant="secondary"
                           size="sm"
-                          onClick={() => window.open(state.url, '_blank', 'noopener,noreferrer')}
+                          onClick={() => openAuthLink(state.url)}
                         >
                           {t(getAuthKey(provider.id, 'open_link'))}
                         </Button>

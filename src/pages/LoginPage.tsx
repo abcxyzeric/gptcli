@@ -7,7 +7,13 @@ import { Select } from '@/components/ui/Select';
 import { SelectionCheckbox } from '@/components/ui/SelectionCheckbox';
 import { IconEye, IconEyeOff } from '@/components/ui/icons';
 import { useAuthStore, useLanguageStore, useNotificationStore } from '@/stores';
-import { detectApiBaseFromLocation, normalizeApiBase } from '@/utils/connection';
+import {
+  detectApiBaseFromLocation,
+  getApiBaseOriginLabel,
+  isCrossOriginApiBase,
+  isSecureManagementApiBase,
+  normalizeApiBase
+} from '@/utils/connection';
 import { LANGUAGE_LABEL_KEYS, LANGUAGE_ORDER } from '@/utils/constants';
 import { isSupportedLanguage } from '@/utils/language';
 import { INLINE_LOGO_JPEG } from '@/assets/logoInline';
@@ -79,21 +85,18 @@ export function LoginPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
-  const { showNotification } = useNotificationStore();
+  const { showNotification, showConfirmation } = useNotificationStore();
   const language = useLanguageStore((state) => state.language);
   const setLanguage = useLanguageStore((state) => state.setLanguage);
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const login = useAuthStore((state) => state.login);
   const restoreSession = useAuthStore((state) => state.restoreSession);
   const storedBase = useAuthStore((state) => state.apiBase);
-  const storedKey = useAuthStore((state) => state.managementKey);
-  const storedRememberPassword = useAuthStore((state) => state.rememberPassword);
 
   const [apiBase, setApiBase] = useState('');
   const [managementKey, setManagementKey] = useState('');
   const [showCustomBase, setShowCustomBase] = useState(false);
   const [showKey, setShowKey] = useState(false);
-  const [rememberPassword, setRememberPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [autoLoading, setAutoLoading] = useState(true);
   const [autoLoginSuccess, setAutoLoginSuccess] = useState(false);
@@ -120,9 +123,11 @@ export function LoginPage() {
 
   useEffect(() => {
     const init = async () => {
+      let didAutoLogin = false;
       try {
         const autoLoggedIn = await restoreSession();
         if (autoLoggedIn) {
+          didAutoLogin = true;
           setAutoLoginSuccess(true);
           // 延迟跳转，让用户看到成功动画
           setTimeout(() => {
@@ -130,12 +135,13 @@ export function LoginPage() {
             navigate(redirect, { replace: true });
           }, 1500);
         } else {
-          setApiBase(storedBase || detectedBase);
-          setManagementKey(storedKey || '');
-          setRememberPassword(storedRememberPassword || Boolean(storedKey));
+          const initialBase = storedBase || detectedBase;
+          setApiBase(initialBase);
+          setShowCustomBase(Boolean(storedBase && normalizeApiBase(storedBase) !== detectedBase));
+          setManagementKey('');
         }
       } finally {
-        if (!autoLoginSuccess) {
+        if (!didAutoLogin) {
           setAutoLoading(false);
         }
       }
@@ -145,6 +151,29 @@ export function LoginPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const performLogin = useCallback(
+    async (baseToUse: string) => {
+      setLoading(true);
+      setError('');
+
+      try {
+        await login({
+          apiBase: baseToUse,
+          managementKey: managementKey.trim()
+        });
+        showNotification(t('common.connected_status'), 'success');
+        navigate('/', { replace: true });
+      } catch (err: unknown) {
+        const message = getLocalizedErrorMessage(err, t);
+        setError(message);
+        showNotification(`${t('notification.login_failed')}: ${message}`, 'error');
+      } finally {
+        setLoading(false);
+      }
+    },
+    [login, managementKey, navigate, showNotification, t]
+  );
+
   const handleSubmit = useCallback(async () => {
     if (!managementKey.trim()) {
       setError(t('login.error_required'));
@@ -152,24 +181,54 @@ export function LoginPage() {
     }
 
     const baseToUse = apiBase ? normalizeApiBase(apiBase) : detectedBase;
-    setLoading(true);
-    setError('');
-    try {
-      await login({
-        apiBase: baseToUse,
-        managementKey: managementKey.trim(),
-        rememberPassword
+    if (!isSecureManagementApiBase(baseToUse)) {
+      const message = t('portal.login.api_base_security_error', {
+        defaultValue:
+          'Chỉ chấp nhận Management API qua HTTPS. HTTP chỉ được phép với localhost hoặc 127.0.0.1.'
       });
-      showNotification(t('common.connected_status'), 'success');
-      navigate('/', { replace: true });
-    } catch (err: unknown) {
-      const message = getLocalizedErrorMessage(err, t);
       setError(message);
-      showNotification(`${t('notification.login_failed')}: ${message}`, 'error');
-    } finally {
-      setLoading(false);
+      showNotification(message, 'error');
+      return;
     }
-  }, [apiBase, detectedBase, login, managementKey, navigate, rememberPassword, showNotification, t]);
+
+    if (isCrossOriginApiBase(baseToUse)) {
+      showConfirmation({
+        title: t('portal.login.cross_origin_confirm_title', {
+          defaultValue: 'Xác nhận gửi khóa quản trị'
+        }),
+        message: (
+          <div>
+            <p>
+              {t('portal.login.cross_origin_confirm_body', {
+                defaultValue:
+                  'Bạn sắp gửi khóa quản trị tới một Management API khác origin với trang hiện tại.'
+              })}
+            </p>
+            <p>
+              <strong>{getApiBaseOriginLabel(baseToUse)}</strong>
+            </p>
+          </div>
+        ),
+        confirmText: t('portal.login.cross_origin_confirm_action', {
+          defaultValue: 'Tiếp tục kết nối'
+        }),
+        cancelText: t('common.cancel'),
+        variant: 'primary',
+        onConfirm: () => performLogin(baseToUse)
+      });
+      return;
+    }
+
+    await performLogin(baseToUse);
+  }, [
+    apiBase,
+    detectedBase,
+    managementKey,
+    performLogin,
+    showConfirmation,
+    showNotification,
+    t
+  ]);
 
   const handleSubmitKeyDown = useCallback(
     (event: React.KeyboardEvent) => {
@@ -291,6 +350,10 @@ export function LoginPage() {
                 value={managementKey}
                 onChange={(e) => setManagementKey(e.target.value)}
                 onKeyDown={handleSubmitKeyDown}
+                hint={t('portal.login.management_key_security_hint', {
+                  defaultValue:
+                    'Khóa quản trị chỉ được giữ trong bộ nhớ của tab hiện tại và sẽ không được lưu lại trên trình duyệt.'
+                })}
                 rightElement={
                   <button
                     type="button"
@@ -311,16 +374,6 @@ export function LoginPage() {
                   </button>
                 }
               />
-
-              <div className={styles.toggleAdvanced}>
-                <SelectionCheckbox
-                  checked={rememberPassword}
-                  onChange={setRememberPassword}
-                  ariaLabel={t('login.remember_password_label')}
-                  label={t('login.remember_password_label')}
-                  labelClassName={styles.toggleLabel}
-                />
-              </div>
 
               <Button fullWidth onClick={handleSubmit} loading={loading}>
                 {loading

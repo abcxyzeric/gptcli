@@ -11,7 +11,11 @@ import { secureStorage } from '@/services/storage/secureStorage';
 import { apiClient } from '@/services/api/client';
 import { useConfigStore } from './useConfigStore';
 import { useUsageStatsStore } from './useUsageStatsStore';
-import { detectApiBaseFromLocation, normalizeApiBase } from '@/utils/connection';
+import {
+  detectApiBaseFromLocation,
+  isSecureManagementApiBase,
+  normalizeApiBase
+} from '@/utils/connection';
 
 interface AuthStoreState extends AuthState {
   connectionStatus: ConnectionStatus;
@@ -27,6 +31,11 @@ interface AuthStoreState extends AuthState {
 }
 
 let restoreSessionPromise: Promise<boolean> | null = null;
+const AUTH_STORE_VERSION = 2;
+
+type PersistedAuthStore = Partial<
+  Pick<AuthStoreState, 'apiBase' | 'serverVersion' | 'serverBuildDate'>
+>;
 
 export const useAuthStore = create<AuthStoreState>()(
   persist(
@@ -35,7 +44,6 @@ export const useAuthStore = create<AuthStoreState>()(
       isAuthenticated: false,
       apiBase: '',
       managementKey: '',
-      rememberPassword: false,
       serverVersion: null,
       serverBuildDate: null,
       connectionStatus: 'disconnected',
@@ -46,39 +54,29 @@ export const useAuthStore = create<AuthStoreState>()(
         if (restoreSessionPromise) return restoreSessionPromise;
 
         restoreSessionPromise = (async () => {
-          secureStorage.migratePlaintextKeys(['apiBase', 'apiUrl', 'managementKey']);
+          secureStorage.migratePlaintextKeys(['apiBase', 'apiUrl']);
+          secureStorage.removeItem('managementKey');
+          localStorage.removeItem('isLoggedIn');
 
-          const wasLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
           const legacyBase =
             secureStorage.getItem<string>('apiBase') ||
             secureStorage.getItem<string>('apiUrl', { encrypt: true });
-          const legacyKey = secureStorage.getItem<string>('managementKey');
 
-          const { apiBase, managementKey, rememberPassword } = get();
-          const resolvedBase = normalizeApiBase(apiBase || legacyBase || detectApiBaseFromLocation());
-          const resolvedKey = managementKey || legacyKey || '';
-          const resolvedRememberPassword = rememberPassword || Boolean(managementKey) || Boolean(legacyKey);
+          const detectedBase = detectApiBaseFromLocation();
+          const { apiBase } = get();
+          const candidateBase = normalizeApiBase(apiBase || legacyBase || detectedBase);
+          const resolvedBase = isSecureManagementApiBase(candidateBase)
+            ? candidateBase
+            : detectedBase;
 
           set({
             apiBase: resolvedBase,
-            managementKey: resolvedKey,
-            rememberPassword: resolvedRememberPassword
+            managementKey: '',
+            isAuthenticated: false,
+            connectionStatus: 'disconnected',
+            connectionError: null
           });
-          apiClient.setConfig({ apiBase: resolvedBase, managementKey: resolvedKey });
-
-          if (wasLoggedIn && resolvedBase && resolvedKey) {
-            try {
-              await get().login({
-                apiBase: resolvedBase,
-                managementKey: resolvedKey,
-                rememberPassword: resolvedRememberPassword
-              });
-              return true;
-            } catch (error) {
-              console.warn('Auto login failed:', error);
-              return false;
-            }
-          }
+          apiClient.setConfig({ apiBase: resolvedBase, managementKey: '' });
 
           return false;
         })();
@@ -90,7 +88,10 @@ export const useAuthStore = create<AuthStoreState>()(
       login: async (credentials) => {
         const apiBase = normalizeApiBase(credentials.apiBase);
         const managementKey = credentials.managementKey.trim();
-        const rememberPassword = credentials.rememberPassword ?? get().rememberPassword ?? false;
+
+        if (!isSecureManagementApiBase(apiBase)) {
+          throw new Error('Insecure management API base is not allowed. Use HTTPS or localhost over HTTP.');
+        }
 
         try {
           set({ connectionStatus: 'connecting' });
@@ -109,15 +110,11 @@ export const useAuthStore = create<AuthStoreState>()(
             isAuthenticated: true,
             apiBase,
             managementKey,
-            rememberPassword,
             connectionStatus: 'connected',
             connectionError: null
           });
-          if (rememberPassword) {
-            localStorage.setItem('isLoggedIn', 'true');
-          } else {
-            localStorage.removeItem('isLoggedIn');
-          }
+          localStorage.removeItem('isLoggedIn');
+          secureStorage.removeItem('managementKey');
         } catch (error: unknown) {
           const message =
             error instanceof Error
@@ -148,6 +145,7 @@ export const useAuthStore = create<AuthStoreState>()(
           connectionError: null
         });
         localStorage.removeItem('isLoggedIn');
+        secureStorage.removeItem('managementKey');
       },
 
       // 检查认证状态
@@ -195,6 +193,7 @@ export const useAuthStore = create<AuthStoreState>()(
     }),
     {
       name: STORAGE_KEY_AUTH,
+      version: AUTH_STORE_VERSION,
       storage: createJSONStorage(() => ({
         getItem: (name) => {
           const data = secureStorage.getItem<AuthStoreState>(name);
@@ -207,10 +206,21 @@ export const useAuthStore = create<AuthStoreState>()(
           secureStorage.removeItem(name);
         }
       })),
+      migrate: (persistedState: unknown) => {
+        const state = (persistedState || {}) as PersistedAuthStore;
+        return {
+          apiBase: typeof state.apiBase === 'string' ? state.apiBase : '',
+          managementKey: '',
+          serverVersion: typeof state.serverVersion === 'string' ? state.serverVersion : null,
+          serverBuildDate:
+            typeof state.serverBuildDate === 'string' ? state.serverBuildDate : null,
+          isAuthenticated: false,
+          connectionStatus: 'disconnected',
+          connectionError: null
+        };
+      },
       partialize: (state) => ({
         apiBase: state.apiBase,
-        ...(state.rememberPassword ? { managementKey: state.managementKey } : {}),
-        rememberPassword: state.rememberPassword,
         serverVersion: state.serverVersion,
         serverBuildDate: state.serverBuildDate
       })

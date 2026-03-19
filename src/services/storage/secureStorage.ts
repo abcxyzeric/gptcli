@@ -21,10 +21,14 @@ class SecureStorageService {
       return;
     }
 
-    const stringValue = JSON.stringify(value);
-    const storedValue = encrypt ? encryptData(stringValue) : stringValue;
-
-    localStorage.setItem(key, storedValue);
+    try {
+      const stringValue = JSON.stringify(value);
+      const storedValue = encrypt ? encryptData(stringValue) : stringValue;
+      localStorage.setItem(key, storedValue);
+    } catch (error) {
+      console.warn(`Failed to persist local storage key "${key}" securely:`, error);
+      this.removeItem(key);
+    }
   }
 
   /**

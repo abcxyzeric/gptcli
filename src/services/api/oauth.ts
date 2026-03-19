@@ -3,6 +3,7 @@
  */
 
 import { apiClient } from './client';
+import { isSafeExternalUrl } from '@/utils/connection';
 
 export type OAuthProvider =
   | 'codex'
@@ -39,7 +40,12 @@ function ensureOAuthStartResponse(value: unknown): OAuthStartResponse {
     throw new Error('OAuth endpoint returned invalid data. Check that API base points to a real CLIProxyAPI backend.');
   }
 
-  const result: OAuthStartResponse = { url: value.url.trim() };
+  const url = value.url.trim();
+  if (!isSafeExternalUrl(url)) {
+    throw new Error('OAuth endpoint returned an unsafe authorization URL.');
+  }
+
+  const result: OAuthStartResponse = { url };
   if (typeof value.state === 'string' && value.state.trim()) {
     result.state = value.state.trim();
   }

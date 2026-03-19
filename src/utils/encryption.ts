@@ -69,8 +69,11 @@ export function encryptData(value: string): string {
     const encrypted = xorBytes(encodeText(value), keyBytes);
     return `${ENC_PREFIX}${toBase64(encrypted)}`;
   } catch (error) {
-    console.warn('Encryption failed, fallback to plaintext:', error);
-    return value;
+    throw new Error(
+      `Failed to encrypt browser storage payload: ${
+        error instanceof Error ? error.message : 'Unknown error'
+      }`
+    );
   }
 }
 

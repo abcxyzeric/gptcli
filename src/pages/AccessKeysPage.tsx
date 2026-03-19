@@ -61,12 +61,17 @@ export function AccessKeysPage() {
       const data = await apiKeysApi.list();
       setKeys(data);
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Failed to load access keys.';
+      const message =
+        err instanceof Error
+          ? err.message
+          : t('access_keys_page.load_error', {
+              defaultValue: 'Failed to load access keys.',
+            });
       setError(message);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useHeaderRefresh(loadKeys);
 
@@ -104,7 +109,10 @@ export function AccessKeysPage() {
     const trimmed = draft.trim();
 
     if (!trimmed) {
-      showNotification('Please enter an access key.', 'error');
+      showNotification(
+        t('access_keys_page.empty_error', { defaultValue: 'Please enter an access key.' }),
+        'error'
+      );
       return;
     }
 
@@ -112,7 +120,12 @@ export function AccessKeysPage() {
       (value, index) => value === trimmed && index !== editingIndex
     );
     if (duplicateIndex !== -1) {
-      showNotification('This access key already exists.', 'error');
+      showNotification(
+        t('access_keys_page.duplicate_error', {
+          defaultValue: 'This access key already exists.',
+        }),
+        'error'
+      );
       return;
     }
 
@@ -120,36 +133,59 @@ export function AccessKeysPage() {
     try {
       if (editingIndex === null) {
         await apiKeysApi.replace([...keys, trimmed]);
-        showNotification('New access key added.', 'success');
+        showNotification(
+          t('access_keys_page.added_success', { defaultValue: 'New access key added.' }),
+          'success'
+        );
       } else {
         await apiKeysApi.update(editingIndex, trimmed);
-        showNotification('Access key updated.', 'success');
+        showNotification(
+          t('access_keys_page.updated_success', { defaultValue: 'Access key updated.' }),
+          'success'
+        );
       }
 
       await loadKeys();
       resetModal();
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Unable to save the access key.';
+      const message =
+        err instanceof Error
+          ? err.message
+          : t('access_keys_page.save_error', {
+              defaultValue: 'Unable to save the access key.',
+            });
       showNotification(message, 'error');
     } finally {
       setSaving(false);
     }
-  }, [draft, editingIndex, keys, loadKeys, resetModal, showNotification]);
+  }, [draft, editingIndex, keys, loadKeys, resetModal, showNotification, t]);
 
   const handleDelete = useCallback((index: number) => {
     showConfirmation({
-      title: 'Delete access key',
-      message: 'This client key will stop working immediately after removal.',
+      title: t('access_keys_page.confirm_delete_title', {
+        defaultValue: 'Delete access key',
+      }),
+      message: t('access_keys_page.confirm_delete_body', {
+        defaultValue: 'This client key will stop working immediately after removal.',
+      }),
       confirmText: t('common.delete'),
       cancelText: t('common.cancel'),
       variant: 'danger',
       onConfirm: async () => {
         try {
           await apiKeysApi.delete(index);
-          showNotification('Access key deleted.', 'success');
+          showNotification(
+            t('access_keys_page.deleted_success', { defaultValue: 'Access key deleted.' }),
+            'success'
+          );
           await loadKeys();
         } catch (err: unknown) {
-          const message = err instanceof Error ? err.message : 'Unable to delete the access key.';
+          const message =
+            err instanceof Error
+              ? err.message
+              : t('access_keys_page.delete_error', {
+                  defaultValue: 'Unable to delete the access key.',
+                });
           showNotification(message, 'error');
         }
       },
@@ -159,18 +195,30 @@ export function AccessKeysPage() {
   const handleRotate = useCallback((index: number) => {
     const nextValue = createRandomKey();
     showConfirmation({
-      title: 'Rotate access key',
-      message: 'The old key will stop working as soon as the new one is saved.',
-      confirmText: 'Rotate',
+      title: t('access_keys_page.confirm_rotate_title', {
+        defaultValue: 'Rotate access key',
+      }),
+      message: t('access_keys_page.confirm_rotate_body', {
+        defaultValue: 'The old key will stop working as soon as the new one is saved.',
+      }),
+      confirmText: t('access_keys_page.rotate_confirm', { defaultValue: 'Rotate' }),
       cancelText: t('common.cancel'),
       variant: 'primary',
       onConfirm: async () => {
         try {
           await apiKeysApi.update(index, nextValue);
-          showNotification('Access key rotated.', 'success');
+          showNotification(
+            t('access_keys_page.rotated_success', { defaultValue: 'Access key rotated.' }),
+            'success'
+          );
           await loadKeys();
         } catch (err: unknown) {
-          const message = err instanceof Error ? err.message : 'Unable to rotate the access key.';
+          const message =
+            err instanceof Error
+              ? err.message
+              : t('access_keys_page.rotate_error', {
+                  defaultValue: 'Unable to rotate the access key.',
+                });
           showNotification(message, 'error');
         }
       },
@@ -180,10 +228,14 @@ export function AccessKeysPage() {
   const handleCopy = useCallback(async (value: string) => {
     const copied = await copyToClipboard(value);
     showNotification(
-      copied ? 'Access key copied to clipboard.' : 'Copy failed.',
+      copied
+        ? t('access_keys_page.copy_success', {
+            defaultValue: 'Access key copied to clipboard.',
+          })
+        : t('access_keys_page.copy_failed', { defaultValue: 'Copy failed.' }),
       copied ? 'success' : 'error'
     );
-  }, [showNotification]);
+  }, [showNotification, t]);
 
   const toggleExpanded = useCallback((index: number) => {
     setExpandedIndexes((previous) => {
@@ -201,9 +253,14 @@ export function AccessKeysPage() {
     <div className={styles.container}>
       <div className={styles.pageHeader}>
         <div>
-          <h1 className={styles.pageTitle}>Access Keys</h1>
+          <h1 className={styles.pageTitle}>
+            {t('access_keys_page.title', { defaultValue: 'Access Keys' })}
+          </h1>
           <p className={styles.description}>
-            Manage the client keys that your web users or CLI tools will use to call the proxy.
+            {t('access_keys_page.description', {
+              defaultValue:
+                'Manage the client keys that your web users or CLI tools will use to call the proxy.',
+            })}
           </p>
         </div>
         <div className={styles.pageActions}>
@@ -211,7 +268,7 @@ export function AccessKeysPage() {
             {t('common.refresh')}
           </Button>
           <Button size="sm" onClick={openCreateModal} disabled={disableControls}>
-            Add key
+            {t('access_keys_page.add_key', { defaultValue: 'Add key' })}
           </Button>
         </div>
       </div>
@@ -219,33 +276,53 @@ export function AccessKeysPage() {
       <div className={styles.statsGrid}>
         <Card className={styles.statCard}>
           <span className={styles.statValue}>{keyStats.total}</span>
-          <span className={styles.statLabel}>Total client keys</span>
+          <span className={styles.statLabel}>
+            {t('access_keys_page.total_client_keys', { defaultValue: 'Total client keys' })}
+          </span>
         </Card>
         <Card className={styles.statCard}>
           <span className={styles.statValue}>{keyStats.longLived}</span>
-          <span className={styles.statLabel}>Generated by this panel</span>
+          <span className={styles.statLabel}>
+            {t('access_keys_page.generated_in_panel', { defaultValue: 'Generated by this panel' })}
+          </span>
         </Card>
         <Card className={styles.statCard}>
-          <span className={styles.statValue}>{disableControls ? 'Offline' : 'Ready'}</span>
-          <span className={styles.statLabel}>Management connection</span>
+          <span className={styles.statValue}>
+            {disableControls
+              ? t('access_keys_page.offline', { defaultValue: 'Offline' })
+              : t('access_keys_page.ready', { defaultValue: 'Ready' })}
+          </span>
+          <span className={styles.statLabel}>
+            {t('access_keys_page.management_connection', {
+              defaultValue: 'Management connection',
+            })}
+          </span>
         </Card>
       </div>
 
       <Card
-        title="Key list"
+        title={t('access_keys_page.list_title', { defaultValue: 'Key list' })}
         extra={
           <span className={styles.cardHint}>
-            These keys map to the top-level <code>api-keys</code> list in CLIProxyAPI.
+            {t('access_keys_page.list_hint', {
+              defaultValue:
+                'These keys map to the top-level `api-keys` list in CLIProxyAPI.',
+            })}
           </span>
         }
       >
         {error && <div className={styles.errorBox}>{error}</div>}
 
         {loading ? (
-          <div className={styles.emptyState}>Loading access keys...</div>
+          <div className={styles.emptyState}>
+            {t('access_keys_page.loading', { defaultValue: 'Loading access keys...' })}
+          </div>
         ) : keys.length === 0 ? (
           <div className={styles.emptyState}>
-            No client keys yet. Create one here, then distribute it to your CLI users.
+            {t('access_keys_page.empty', {
+              defaultValue:
+                'No client keys yet. Create one here, then distribute it to your CLI users.',
+            })}
           </div>
         ) : (
           <div className={styles.keysGrid}>
@@ -256,9 +333,20 @@ export function AccessKeysPage() {
                 <div key={`${value}-${index}`} className={styles.keyCard}>
                   <div className={styles.keyHeader}>
                     <div>
-                      <div className={styles.keyTitle}>Client key #{index + 1}</div>
+                      <div className={styles.keyTitle}>
+                        {t('access_keys_page.key_title', {
+                          defaultValue: 'Client key #{{index}}',
+                          index: index + 1,
+                        })}
+                      </div>
                       <div className={styles.keyMeta}>
-                        {value.startsWith(ACCESS_KEY_PREFIX) ? 'Generated in panel' : 'Imported or custom'}
+                        {value.startsWith(ACCESS_KEY_PREFIX)
+                          ? t('access_keys_page.generated_badge', {
+                              defaultValue: 'Generated in panel',
+                            })
+                          : t('access_keys_page.imported_badge', {
+                              defaultValue: 'Imported or custom',
+                            })}
                       </div>
                     </div>
                     <button
@@ -266,7 +354,9 @@ export function AccessKeysPage() {
                       className={styles.showButton}
                       onClick={() => toggleExpanded(index)}
                     >
-                      {expanded ? 'Hide' : 'Show'}
+                      {expanded
+                        ? t('access_keys_page.hide', { defaultValue: 'Hide' })
+                        : t('access_keys_page.show', { defaultValue: 'Show' })}
                     </button>
                   </div>
 
@@ -274,16 +364,16 @@ export function AccessKeysPage() {
 
                   <div className={styles.keyActions}>
                     <Button variant="secondary" size="sm" onClick={() => void handleCopy(value)}>
-                      Copy
+                      {t('access_keys_page.copy', { defaultValue: 'Copy' })}
                     </Button>
                     <Button variant="secondary" size="sm" onClick={() => openEditModal(index)}>
-                      Edit
+                      {t('access_keys_page.edit', { defaultValue: 'Edit' })}
                     </Button>
                     <Button variant="ghost" size="sm" onClick={() => handleRotate(index)}>
-                      Rotate
+                      {t('access_keys_page.rotate', { defaultValue: 'Rotate' })}
                     </Button>
                     <Button variant="danger" size="sm" onClick={() => handleDelete(index)}>
-                      Delete
+                      {t('access_keys_page.delete', { defaultValue: 'Delete' })}
                     </Button>
                   </div>
                 </div>
@@ -293,32 +383,51 @@ export function AccessKeysPage() {
         )}
       </Card>
 
-      <Card title="Recommended flow">
+      <Card title={t('access_keys_page.recommended_flow', { defaultValue: 'Recommended flow' })}>
         <div className={styles.flowList}>
           <div className={styles.flowItem}>
             <span className={styles.flowStep}>1</span>
             <div>
-              <div className={styles.flowTitle}>Create a client key</div>
+              <div className={styles.flowTitle}>
+                {t('access_keys_page.flow_1_title', { defaultValue: 'Create a client key' })}
+              </div>
               <p className={styles.flowText}>
-                This key is what your users paste into their third-party CLI tools.
+                {t('access_keys_page.flow_1_desc', {
+                  defaultValue:
+                    'This key is what your users paste into their third-party CLI tools.',
+                })}
               </p>
             </div>
           </div>
           <div className={styles.flowItem}>
             <span className={styles.flowStep}>2</span>
             <div>
-              <div className={styles.flowTitle}>Upload or login your accounts</div>
+              <div className={styles.flowTitle}>
+                {t('access_keys_page.flow_2_title', {
+                  defaultValue: 'Upload or login your accounts',
+                })}
+              </div>
               <p className={styles.flowText}>
-                Use the Accounts and OAuth pages to add Codex, Claude, Gemini, Kimi or other credentials.
+                {t('access_keys_page.flow_2_desc', {
+                  defaultValue:
+                    'Use the Accounts and OAuth pages to add Codex, Claude, Gemini, Kimi or other credentials.',
+                })}
               </p>
             </div>
           </div>
           <div className={styles.flowItem}>
             <span className={styles.flowStep}>3</span>
             <div>
-              <div className={styles.flowTitle}>Watch quota and usage</div>
+              <div className={styles.flowTitle}>
+                {t('access_keys_page.flow_3_title', {
+                  defaultValue: 'Watch quota and usage',
+                })}
+              </div>
               <p className={styles.flowText}>
-                Check the Quota page for remaining turns and the Usage page for request/token analytics.
+                {t('access_keys_page.flow_3_desc', {
+                  defaultValue:
+                    'Check the Quota page for remaining turns and the Usage page for request/token analytics.',
+                })}
               </p>
             </div>
           </div>
@@ -327,7 +436,11 @@ export function AccessKeysPage() {
 
       <Modal
         open={modalOpen}
-        title={isEditing ? 'Edit access key' : 'Create access key'}
+        title={
+          isEditing
+            ? t('access_keys_page.edit_key', { defaultValue: 'Edit access key' })
+            : t('access_keys_page.create_key', { defaultValue: 'Create access key' })
+        }
         onClose={resetModal}
         footer={
           <>
@@ -335,7 +448,9 @@ export function AccessKeysPage() {
               {t('common.cancel')}
             </Button>
             <Button onClick={() => void handleSave()} loading={saving}>
-              {isEditing ? 'Save changes' : 'Create key'}
+              {isEditing
+                ? t('access_keys_page.save_changes', { defaultValue: 'Save changes' })
+                : t('access_keys_page.create_key', { defaultValue: 'Create key' })}
             </Button>
           </>
         }
@@ -343,15 +458,20 @@ export function AccessKeysPage() {
         <div className={styles.modalBody}>
           <Input
             autoFocus
-            label="Access key"
+            label={t('access_keys_page.access_key_label', { defaultValue: 'Access key' })}
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
-            placeholder="cpw_xxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-            hint="Use a memorable prefix if you want to know where the key came from."
+            placeholder={t('access_keys_page.access_key_placeholder', {
+              defaultValue: 'cpw_xxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+            })}
+            hint={t('access_keys_page.access_key_hint', {
+              defaultValue:
+                'Use a memorable prefix if you want to know where the key came from.',
+            })}
           />
           <div className={styles.modalActions}>
             <Button variant="secondary" size="sm" onClick={() => setDraft(createRandomKey())}>
-              Generate another
+              {t('access_keys_page.generate_another', { defaultValue: 'Generate another' })}
             </Button>
           </div>
         </div>

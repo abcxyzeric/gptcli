@@ -197,8 +197,10 @@ export function LoginPage() {
           /* 启动动画 */
           <div className={styles.splashContent}>
             <img src={INLINE_LOGO_JPEG} alt="ClipProxy" className={styles.splashLogo} />
-            <h1 className={styles.splashTitle}>ClipProxy</h1>
-            <p className={styles.splashSubtitle}>Web Console</p>
+            <h1 className={styles.splashTitle}>{t('splash.title', { defaultValue: 'ClipProxy' })}</h1>
+            <p className={styles.splashSubtitle}>
+              {t('splash.subtitle', { defaultValue: 'Web Console' })}
+            </p>
             <div className={styles.splashLoader}>
               <div className={styles.splashLoaderBar} />
             </div>
@@ -213,7 +215,9 @@ export function LoginPage() {
             <div className={styles.loginCard}>
               <div className={styles.loginHeader}>
                 <div className={styles.titleRow}>
-                  <div className={styles.title}>ClipProxy Web Console</div>
+                  <div className={styles.title}>
+                    {t('portal.login.title', { defaultValue: 'ClipProxy Web Console' })}
+                  </div>
                   <Select
                     className={styles.languageSelect}
                     value={language}
@@ -224,41 +228,56 @@ export function LoginPage() {
                   />
                 </div>
                 <div className={styles.subtitle}>
-                  Connect to the CLIProxyAPI management endpoint to manage user keys, accounts,
-                  quota and usage from the browser.
+                  {t('portal.login.subtitle', {
+                    defaultValue:
+                      'Connect to the CLIProxyAPI management endpoint to manage user keys, accounts, quota and usage from the browser.',
+                  })}
                 </div>
               </div>
 
               <div className={styles.connectionBox}>
-                <div className={styles.label}>Detected API base</div>
+                <div className={styles.label}>
+                  {t('portal.login.detected_api_base', { defaultValue: 'Detected API base' })}
+                </div>
                 <div className={styles.value}>{apiBase || detectedBase}</div>
-                <div className={styles.hint}>Same-origin address is auto-detected from this page.</div>
+                <div className={styles.hint}>
+                  {t('portal.login.detected_api_hint', {
+                    defaultValue: 'Same-origin address is auto-detected from this page.',
+                  })}
+                </div>
               </div>
 
               <div className={styles.toggleAdvanced}>
                 <SelectionCheckbox
                   checked={showCustomBase}
                   onChange={setShowCustomBase}
-                  ariaLabel="Override API base"
-                  label="Override API base"
+                  ariaLabel={t('portal.login.override_api_base', { defaultValue: 'Override API base' })}
+                  label={t('portal.login.override_api_base', { defaultValue: 'Override API base' })}
                   labelClassName={styles.toggleLabel}
                 />
               </div>
 
               {showCustomBase && (
                 <Input
-                  label="API base URL"
-                  placeholder="https://example.com:8317"
+                  label={t('portal.login.api_base_url', { defaultValue: 'API base URL' })}
+                  placeholder={t('portal.login.api_base_placeholder', {
+                    defaultValue: 'https://example.com:8317',
+                  })}
                   value={apiBase}
                   onChange={(e) => setApiBase(e.target.value)}
-                  hint="Use this if the backend is hosted on another domain, port or Cloudflare tunnel."
+                  hint={t('portal.login.api_base_hint', {
+                    defaultValue:
+                      'Use this if the backend is hosted on another domain, port or Cloudflare tunnel.',
+                  })}
                 />
               )}
 
               <Input
                 autoFocus
-                label="Management key"
-                placeholder="Enter your management key"
+                label={t('portal.login.management_key', { defaultValue: 'Management key' })}
+                placeholder={t('portal.login.management_key_placeholder', {
+                  defaultValue: 'Enter your management key',
+                })}
                 type={showKey ? 'text' : 'password'}
                 value={managementKey}
                 onChange={(e) => setManagementKey(e.target.value)}
@@ -295,7 +314,9 @@ export function LoginPage() {
               </div>
 
               <Button fullWidth onClick={handleSubmit} loading={loading}>
-                {loading ? 'Connecting...' : 'Connect'}
+                {loading
+                  ? t('login.submitting', { defaultValue: 'Connecting...' })
+                  : t('portal.login.connect', { defaultValue: 'Connect' })}
               </Button>
 
               {error && <div className={styles.errorBox}>{error}</div>}

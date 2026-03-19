@@ -62,20 +62,27 @@ const normalizeProviderLabel = (value: string | undefined) => {
   }
 };
 
-const getAccountState = (file: AuthFileItem) => {
+const getAccountState = (
+  file: AuthFileItem,
+  t: (key: string, options?: Record<string, unknown>) => string
+) => {
   if (file.disabled) {
-    return 'Paused';
+    return t('portal.dashboard.account_state_paused', { defaultValue: 'Paused' });
   }
 
   if (file.statusMessage) {
-    return 'Needs attention';
+    return t('portal.dashboard.account_state_attention', {
+      defaultValue: 'Needs attention',
+    });
   }
 
   if (file.runtimeOnly) {
-    return 'Runtime only';
+    return t('portal.dashboard.account_state_runtime_only', {
+      defaultValue: 'Runtime only',
+    });
   }
 
-  return 'Ready';
+  return t('portal.dashboard.account_state_ready', { defaultValue: 'Ready' });
 };
 
 export function DashboardPage() {
@@ -262,38 +269,56 @@ export function DashboardPage() {
 
   const quickStats: QuickStat[] = [
     {
-      label: 'Client access keys',
+      label: t('portal.dashboard.client_access_keys', {
+        defaultValue: 'Client access keys',
+      }),
       value: stats.apiKeys ?? '-',
       icon: <IconKey size={24} />,
       path: '/access-keys',
       loading: loading && stats.apiKeys === null,
-      sublabel: 'Keys for users and third-party CLI tools',
+      sublabel: t('portal.dashboard.client_access_keys_desc', {
+        defaultValue: 'Keys for users and third-party CLI tools',
+      }),
     },
     {
-      label: 'Stored accounts',
+      label: t('portal.dashboard.stored_accounts', { defaultValue: 'Stored accounts' }),
       value: stats.authFiles ?? '-',
       icon: <IconFileText size={24} />,
       path: '/auth-files',
       loading: loading && stats.authFiles === null,
-      sublabel: `${quotaTrackedAccounts} accounts ready for quota tracking`,
+      sublabel: t('portal.dashboard.stored_accounts_desc', {
+        defaultValue: '{{count}} accounts ready for quota tracking',
+        count: quotaTrackedAccounts,
+      }),
     },
     {
-      label: 'Provider routes',
+      label: t('portal.dashboard.provider_routes', { defaultValue: 'Provider routes' }),
       value: loading ? '-' : providerStatsReady ? totalProviderKeys : '-',
       icon: <IconBot size={24} />,
       path: '/ai-providers',
       loading,
       sublabel: providerStatsReady
-        ? `Gemini ${providerStats.gemini} • Codex ${providerStats.codex} • Claude ${providerStats.claude} • OpenAI ${providerStats.openai}`
-        : 'Custom upstream and model routing',
+        ? t('portal.dashboard.provider_routes_breakdown', {
+            defaultValue:
+              'Gemini {{gemini}} • Codex {{codex}} • Claude {{claude}} • OpenAI {{openai}}',
+            gemini: providerStats.gemini,
+            codex: providerStats.codex,
+            claude: providerStats.claude,
+            openai: providerStats.openai,
+          })
+        : t('portal.dashboard.provider_routes_desc', {
+            defaultValue: 'Custom upstream and model routing',
+          }),
     },
     {
-      label: 'Available models',
+      label: t('dashboard.available_models', { defaultValue: 'Available models' }),
       value: modelsLoading ? '-' : models.length,
       icon: <IconSatellite size={24} />,
       path: '/system',
       loading: modelsLoading,
-      sublabel: 'Detected through the proxy endpoint',
+      sublabel: t('portal.dashboard.available_models_desc', {
+        defaultValue: 'Detected through the proxy endpoint',
+      }),
     },
   ];
 
@@ -310,22 +335,34 @@ export function DashboardPage() {
     <div className={styles.dashboard}>
       <section className={styles.heroCard}>
         <div className={styles.heroMain}>
-          <div className={styles.heroEyebrow}>Web Proxy Control Center</div>
-          <h1 className={styles.title}>Run your existing CLI proxy through a clean web panel</h1>
+          <div className={styles.heroEyebrow}>
+            {t('portal.dashboard.eyebrow', { defaultValue: 'Web Proxy Control Center' })}
+          </div>
+          <h1 className={styles.title}>
+            {t('portal.dashboard.hero_title', {
+              defaultValue: 'Run your existing CLI proxy through a clean web panel',
+            })}
+          </h1>
           <p className={styles.subtitle}>
-            Keep the original CLIProxyAPI logic untouched, then manage access keys, OAuth accounts,
-            quota and usage from one browser dashboard.
+            {t('portal.dashboard.hero_subtitle', {
+              defaultValue:
+                'Keep the original CLIProxyAPI logic untouched, then manage access keys, OAuth accounts, quota and usage from one browser dashboard.',
+            })}
           </p>
 
           <div className={styles.heroActions}>
             <Link to="/quota" className={styles.primaryAction}>
-              Open quota center
+              {t('portal.dashboard.open_quota_center', {
+                defaultValue: 'Open quota center',
+              })}
             </Link>
             <Link to="/access-keys" className={styles.secondaryAction}>
-              Manage user keys
+              {t('portal.dashboard.manage_user_keys', {
+                defaultValue: 'Manage user keys',
+              })}
             </Link>
             <Link to="/auth-files" className={styles.secondaryAction}>
-              View accounts
+              {t('portal.dashboard.view_accounts', { defaultValue: 'View accounts' })}
             </Link>
           </div>
         </div>
@@ -344,10 +381,10 @@ export function DashboardPage() {
               />
               <span className={styles.statusText}>
                 {connectionStatus === 'connected'
-                  ? 'Connected'
+                  ? t('portal.dashboard.connected', { defaultValue: 'Connected' })
                   : connectionStatus === 'connecting'
-                    ? 'Connecting'
-                    : 'Disconnected'}
+                    ? t('portal.dashboard.connecting', { defaultValue: 'Connecting' })
+                    : t('portal.dashboard.disconnected', { defaultValue: 'Disconnected' })}
               </span>
             </div>
 
@@ -360,7 +397,10 @@ export function DashboardPage() {
               )}
               {serverBuildDate && (
                 <span className={styles.buildDate}>
-                  Built {new Date(serverBuildDate).toLocaleDateString(i18n.language)}
+                  {t('portal.dashboard.built_on', {
+                    defaultValue: 'Built on {{date}}',
+                    date: new Date(serverBuildDate).toLocaleDateString(i18n.language),
+                  })}
                 </span>
               )}
             </div>
@@ -368,19 +408,37 @@ export function DashboardPage() {
 
           <div className={styles.heroAsideGrid}>
             <div className={styles.heroMetric}>
-              <span className={styles.heroMetricLabel}>Routing</span>
+              <span className={styles.heroMetricLabel}>
+                {t('portal.dashboard.routing', { defaultValue: 'Routing' })}
+              </span>
               <strong>{routingStrategyDisplay}</strong>
             </div>
             <div className={styles.heroMetric}>
-              <span className={styles.heroMetricLabel}>Usage stats</span>
-              <strong>{config?.usageStatisticsEnabled ? 'Enabled' : 'Disabled'}</strong>
+              <span className={styles.heroMetricLabel}>
+                {t('portal.dashboard.usage_stats', { defaultValue: 'Usage stats' })}
+              </span>
+              <strong>
+                {config?.usageStatisticsEnabled
+                  ? t('portal.dashboard.enabled', { defaultValue: 'Enabled' })
+                  : t('portal.dashboard.disabled', { defaultValue: 'Disabled' })}
+              </strong>
             </div>
             <div className={styles.heroMetric}>
-              <span className={styles.heroMetricLabel}>WebSocket auth</span>
-              <strong>{config?.wsAuth ? 'On' : 'Off'}</strong>
+              <span className={styles.heroMetricLabel}>
+                {t('portal.dashboard.websocket_auth', {
+                  defaultValue: 'WebSocket auth',
+                })}
+              </span>
+              <strong>
+                {config?.wsAuth
+                  ? t('portal.dashboard.enabled', { defaultValue: 'Enabled' })
+                  : t('portal.dashboard.disabled', { defaultValue: 'Disabled' })}
+              </strong>
             </div>
             <div className={styles.heroMetric}>
-              <span className={styles.heroMetricLabel}>Retries</span>
+              <span className={styles.heroMetricLabel}>
+                {t('portal.dashboard.retries', { defaultValue: 'Retries' })}
+              </span>
               <strong>{config?.requestRetry ?? 0}</strong>
             </div>
           </div>
@@ -406,19 +464,28 @@ export function DashboardPage() {
         <section className={styles.panelCard}>
           <div className={styles.panelHeader}>
             <div>
-              <h2 className={styles.sectionTitle}>Your accounts</h2>
+              <h2 className={styles.sectionTitle}>
+                {t('portal.dashboard.accounts_title', { defaultValue: 'Your accounts' })}
+              </h2>
               <p className={styles.sectionCopy}>
-                Upload credentials, see provider mix and jump into account-level troubleshooting.
+                {t('portal.dashboard.accounts_subtitle', {
+                  defaultValue:
+                    'Upload credentials, see provider mix and jump into account-level troubleshooting.',
+                })}
               </p>
             </div>
             <Link to="/auth-files" className={styles.inlineLink}>
-              Open accounts
+              {t('portal.dashboard.open_accounts', { defaultValue: 'Open accounts' })}
             </Link>
           </div>
 
           <div className={styles.providerPills}>
             {accountBreakdown.length === 0 ? (
-              <span className={styles.emptyText}>No accounts loaded yet.</span>
+              <span className={styles.emptyText}>
+                {t('portal.dashboard.no_accounts_loaded', {
+                  defaultValue: 'No accounts loaded yet.',
+                })}
+              </span>
             ) : (
               accountBreakdown.map((item) => (
                 <span key={item.label} className={styles.providerPill}>
@@ -432,7 +499,10 @@ export function DashboardPage() {
           <div className={styles.accountList}>
             {featuredAccounts.length === 0 ? (
               <div className={styles.emptyState}>
-                Add or upload auth files, then this panel will list your latest accounts here.
+                {t('portal.dashboard.recent_accounts_empty', {
+                  defaultValue:
+                    'Add or upload auth files, then this panel will list your latest accounts here.',
+                })}
               </div>
             ) : (
               featuredAccounts.map((file) => (
@@ -443,7 +513,7 @@ export function DashboardPage() {
                       {normalizeProviderLabel(file.provider ?? file.type)}
                     </div>
                   </div>
-                  <span className={styles.accountStatus}>{getAccountState(file)}</span>
+                  <span className={styles.accountStatus}>{getAccountState(file, t)}</span>
                 </Link>
               ))
             )}
@@ -453,10 +523,14 @@ export function DashboardPage() {
         <section className={styles.panelCard}>
           <div className={styles.panelHeader}>
             <div>
-              <h2 className={styles.sectionTitle}>Daily workflow</h2>
+              <h2 className={styles.sectionTitle}>
+                {t('portal.dashboard.workflow_title', { defaultValue: 'Daily workflow' })}
+              </h2>
               <p className={styles.sectionCopy}>
-                These are the pages you will probably touch most when turning the CLI into a web
-                proxy service.
+                {t('portal.dashboard.workflow_subtitle', {
+                  defaultValue:
+                    'These are the pages you will probably touch most when turning the CLI into a web proxy service.',
+                })}
               </p>
             </div>
           </div>
@@ -466,9 +540,16 @@ export function DashboardPage() {
               <div className={styles.workflowIcon}>
                 <IconShield size={20} />
               </div>
-              <div className={styles.workflowTitle}>Issue keys to users</div>
+              <div className={styles.workflowTitle}>
+                {t('portal.dashboard.issue_keys_title', {
+                  defaultValue: 'Issue keys to users',
+                })}
+              </div>
               <p className={styles.workflowText}>
-                Create, rotate and distribute proxy keys without opening the raw YAML config.
+                {t('portal.dashboard.issue_keys_desc', {
+                  defaultValue:
+                    'Create, rotate and distribute proxy keys without opening the raw YAML config.',
+                })}
               </p>
             </Link>
 
@@ -476,9 +557,16 @@ export function DashboardPage() {
               <div className={styles.workflowIcon}>
                 <IconChartLine size={20} />
               </div>
-              <div className={styles.workflowTitle}>Check remaining quota</div>
+              <div className={styles.workflowTitle}>
+                {t('portal.dashboard.quota_title', {
+                  defaultValue: 'Check remaining quota',
+                })}
+              </div>
               <p className={styles.workflowText}>
-                See remaining turns and reset windows for Claude, Codex, Gemini CLI, Kimi and more.
+                {t('portal.dashboard.quota_desc', {
+                  defaultValue:
+                    'See remaining turns and reset windows for Claude, Codex, Gemini CLI, Kimi and more.',
+                })}
               </p>
             </Link>
 
@@ -486,9 +574,16 @@ export function DashboardPage() {
               <div className={styles.workflowIcon}>
                 <IconSatellite size={20} />
               </div>
-              <div className={styles.workflowTitle}>Track request usage</div>
+              <div className={styles.workflowTitle}>
+                {t('portal.dashboard.usage_title', {
+                  defaultValue: 'Track request usage',
+                })}
+              </div>
               <p className={styles.workflowText}>
-                Review tokens, requests, cost estimates and model breakdown across your traffic.
+                {t('portal.dashboard.usage_desc', {
+                  defaultValue:
+                    'Review tokens, requests, cost estimates and model breakdown across your traffic.',
+                })}
               </p>
             </Link>
 
@@ -496,9 +591,16 @@ export function DashboardPage() {
               <div className={styles.workflowIcon}>
                 <IconSettings size={20} />
               </div>
-              <div className={styles.workflowTitle}>Tune proxy behavior</div>
+              <div className={styles.workflowTitle}>
+                {t('portal.dashboard.config_title', {
+                  defaultValue: 'Tune proxy behavior',
+                })}
+              </div>
               <p className={styles.workflowText}>
-                Adjust retries, routing strategy, logging and deployment-facing settings from one place.
+                {t('portal.dashboard.config_desc', {
+                  defaultValue:
+                    'Adjust retries, routing strategy, logging and deployment-facing settings from one place.',
+                })}
               </p>
             </Link>
           </div>
@@ -509,43 +611,80 @@ export function DashboardPage() {
         <section className={styles.panelCard}>
           <div className={styles.panelHeader}>
             <div>
-              <h2 className={styles.sectionTitle}>Routing snapshot</h2>
+              <h2 className={styles.sectionTitle}>
+                {t('portal.dashboard.routing_snapshot_title', {
+                  defaultValue: 'Routing snapshot',
+                })}
+              </h2>
               <p className={styles.sectionCopy}>
-                Quick sanity check for the settings that affect user-facing reliability the most.
+                {t('portal.dashboard.routing_snapshot_subtitle', {
+                  defaultValue:
+                    'Quick sanity check for the settings that affect user-facing reliability the most.',
+                })}
               </p>
             </div>
             <Link to="/config" className={styles.inlineLink}>
-              Edit config
+              {t('portal.dashboard.edit_config', { defaultValue: 'Edit config' })}
             </Link>
           </div>
 
           <div className={styles.configGrid}>
             <div className={styles.configItem}>
-              <span className={styles.configLabel}>Debug mode</span>
-              <span className={styles.configValue}>{config.debug ? 'Enabled' : 'Disabled'}</span>
-            </div>
-            <div className={styles.configItem}>
-              <span className={styles.configLabel}>Usage statistics</span>
+              <span className={styles.configLabel}>
+                {t('portal.dashboard.debug_mode', { defaultValue: 'Debug mode' })}
+              </span>
               <span className={styles.configValue}>
-                {config.usageStatisticsEnabled ? 'Enabled' : 'Disabled'}
+                {config.debug
+                  ? t('portal.dashboard.enabled', { defaultValue: 'Enabled' })
+                  : t('portal.dashboard.disabled', { defaultValue: 'Disabled' })}
               </span>
             </div>
             <div className={styles.configItem}>
-              <span className={styles.configLabel}>Logging to file</span>
-              <span className={styles.configValue}>{config.loggingToFile ? 'Enabled' : 'Disabled'}</span>
+              <span className={styles.configLabel}>
+                {t('portal.dashboard.usage_statistics_label', {
+                  defaultValue: 'Usage statistics',
+                })}
+              </span>
+              <span className={styles.configValue}>
+                {config.usageStatisticsEnabled
+                  ? t('portal.dashboard.enabled', { defaultValue: 'Enabled' })
+                  : t('portal.dashboard.disabled', { defaultValue: 'Disabled' })}
+              </span>
             </div>
             <div className={styles.configItem}>
-              <span className={styles.configLabel}>Request retry</span>
+              <span className={styles.configLabel}>
+                {t('portal.dashboard.logging_to_file', { defaultValue: 'Logging to file' })}
+              </span>
+              <span className={styles.configValue}>
+                {config.loggingToFile
+                  ? t('portal.dashboard.enabled', { defaultValue: 'Enabled' })
+                  : t('portal.dashboard.disabled', { defaultValue: 'Disabled' })}
+              </span>
+            </div>
+            <div className={styles.configItem}>
+              <span className={styles.configLabel}>
+                {t('portal.dashboard.request_retry', { defaultValue: 'Request retry' })}
+              </span>
               <span className={styles.configValue}>{config.requestRetry ?? 0}</span>
             </div>
             <div className={styles.configItem}>
-              <span className={styles.configLabel}>Routing strategy</span>
+              <span className={styles.configLabel}>
+                {t('portal.dashboard.routing_strategy_label', {
+                  defaultValue: 'Routing strategy',
+                })}
+              </span>
               <span className={styles.configValue}>{routingStrategyDisplay}</span>
             </div>
             <div className={styles.configItem}>
-              <span className={styles.configLabel}>Force model prefix</span>
+              <span className={styles.configLabel}>
+                {t('portal.dashboard.force_model_prefix', {
+                  defaultValue: 'Force model prefix',
+                })}
+              </span>
               <span className={styles.configValue}>
-                {config.forceModelPrefix ? 'Enabled' : 'Disabled'}
+                {config.forceModelPrefix
+                  ? t('portal.dashboard.enabled', { defaultValue: 'Enabled' })
+                  : t('portal.dashboard.disabled', { defaultValue: 'Disabled' })}
               </span>
             </div>
           </div>

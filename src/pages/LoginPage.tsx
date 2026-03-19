@@ -19,7 +19,10 @@ import styles from './LoginPage.module.scss';
  */
 type RedirectState = { from?: { pathname?: string } };
 
-function getLocalizedErrorMessage(error: unknown, t: (key: string) => string): string {
+function getLocalizedErrorMessage(
+  error: unknown,
+  t: (key: string, options?: Record<string, unknown>) => string
+): string {
   const apiError = error as Partial<ApiError>;
   const status = typeof apiError.status === 'number' ? apiError.status : undefined;
   const code = typeof apiError.code === 'string' ? apiError.code : undefined;
@@ -55,6 +58,12 @@ function getLocalizedErrorMessage(error: unknown, t: (key: string) => string): s
   }
   if (code === 'ERR_CERT_AUTHORITY_INVALID' || message.toLowerCase().includes('certificate')) {
     return t('login.error_ssl');
+  }
+  if (code === 'ERR_HTML_RESPONSE' || message.toLowerCase().includes('returned html instead of json')) {
+    return t('login.error_static_site', {
+      defaultValue:
+        'Địa chỉ hiện tại chỉ đang trả về web tĩnh, chưa phải Management API của CLIProxyAPI. Hãy nhập đúng API base của backend thật.',
+    });
   }
 
   // 检查 CORS 错误

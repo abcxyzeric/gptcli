@@ -30,13 +30,44 @@ export interface IFlowCookieAuthResponse {
   type?: string;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function ensureOAuthStartResponse(value: unknown): OAuthStartResponse {
+  if (!isRecord(value) || typeof value.url !== 'string' || !value.url.trim()) {
+    throw new Error('OAuth endpoint returned invalid data. Check that API base points to a real CLIProxyAPI backend.');
+  }
+
+  const result: OAuthStartResponse = { url: value.url.trim() };
+  if (typeof value.state === 'string' && value.state.trim()) {
+    result.state = value.state.trim();
+  }
+  return result;
+}
+
+function ensureOAuthStatusResponse(value: unknown): { status: 'ok' | 'wait' | 'error'; error?: string } {
+  if (!isRecord(value) || typeof value.status !== 'string') {
+    throw new Error('OAuth status endpoint returned invalid data. Check that API base points to a real CLIProxyAPI backend.');
+  }
+
+  if (value.status !== 'ok' && value.status !== 'wait' && value.status !== 'error') {
+    throw new Error('OAuth status endpoint returned an unknown status.');
+  }
+
+  return {
+    status: value.status,
+    ...(typeof value.error === 'string' && value.error ? { error: value.error } : {})
+  };
+}
+
 const WEBUI_SUPPORTED: OAuthProvider[] = ['codex', 'anthropic', 'antigravity', 'gemini-cli'];
 const CALLBACK_PROVIDER_MAP: Partial<Record<OAuthProvider, string>> = {
   'gemini-cli': 'gemini'
 };
 
 export const oauthApi = {
-  startAuth: (provider: OAuthProvider, options?: { projectId?: string }) => {
+  async startAuth(provider: OAuthProvider, options?: { projectId?: string }) {
     const params: Record<string, string | boolean> = {};
     if (WEBUI_SUPPORTED.includes(provider)) {
       params.is_webui = true;
@@ -44,15 +75,18 @@ export const oauthApi = {
     if (provider === 'gemini-cli' && options?.projectId) {
       params.project_id = options.projectId;
     }
-    return apiClient.get<OAuthStartResponse>(`/${provider}-auth-url`, {
+    const response = await apiClient.get<OAuthStartResponse>(`/${provider}-auth-url`, {
       params: Object.keys(params).length ? params : undefined
     });
+    return ensureOAuthStartResponse(response);
   },
 
-  getAuthStatus: (state: string) =>
-    apiClient.get<{ status: 'ok' | 'wait' | 'error'; error?: string }>(`/get-auth-status`, {
+  async getAuthStatus(state: string) {
+    const response = await apiClient.get<{ status: 'ok' | 'wait' | 'error'; error?: string }>(`/get-auth-status`, {
       params: { state }
-    }),
+    });
+    return ensureOAuthStatusResponse(response);
+  },
 
   submitCallback: (provider: OAuthProvider, redirectUrl: string) => {
     const callbackProvider = CALLBACK_PROVIDER_MAP[provider] ?? provider;

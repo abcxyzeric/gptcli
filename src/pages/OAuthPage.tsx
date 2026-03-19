@@ -176,7 +176,12 @@ export function OAuthPage() {
         provider,
         provider === 'gemini-cli' ? { projectId: projectId || undefined } : undefined
       );
-      updateProviderState(provider, { url: res.url, state: res.state, status: 'waiting', polling: true });
+      updateProviderState(provider, {
+        url: res.url,
+        state: res.state,
+        status: res.state ? 'waiting' : 'idle',
+        polling: Boolean(res.state)
+      });
       if (res.state) {
         startPolling(provider, res.state);
       }

@@ -81,6 +81,50 @@ class ApiClient {
     return null;
   }
 
+  private buildApiError(
+    message: string,
+    extras: Partial<Pick<ApiError, 'status' | 'code' | 'details' | 'data'>> = {}
+  ): ApiError {
+    const error = new Error(message) as ApiError;
+    error.name = 'ApiError';
+    error.status = extras.status;
+    error.code = extras.code;
+    error.details = extras.details;
+    error.data = extras.data;
+    return error;
+  }
+
+  private ensureStructuredResponse(response: AxiosResponse): void {
+    const contentType =
+      this.readHeader(response.headers as Record<string, unknown>, ['content-type'])?.toLowerCase() ||
+      '';
+    const data = response.data;
+    const bodyPreview =
+      typeof data === 'string' ? data.slice(0, 400).trim().toLowerCase() : '';
+    const looksLikeHtml =
+      contentType.includes('text/html') ||
+      bodyPreview.startsWith('<!doctype html') ||
+      bodyPreview.startsWith('<html') ||
+      bodyPreview.includes('<body');
+
+    if (!looksLikeHtml) {
+      return;
+    }
+
+    throw this.buildApiError(
+      'Management API returned HTML instead of JSON. Set API base to the real CLIProxyAPI backend, not a static Pages site.',
+      {
+        status: response.status,
+        code: 'ERR_HTML_RESPONSE',
+        details: {
+          url: response.config?.url || '',
+          contentType
+        },
+        data
+      }
+    );
+  }
+
   /**
    * 设置请求/响应拦截器
    */
@@ -173,6 +217,7 @@ class ApiClient {
    */
   async get<T = unknown>(url: string, config?: AxiosRequestConfig): Promise<T> {
     const response = await this.instance.get<T>(url, config);
+    this.ensureStructuredResponse(response);
     return response.data;
   }
 
@@ -181,6 +226,7 @@ class ApiClient {
    */
   async post<T = unknown>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
     const response = await this.instance.post<T>(url, data, config);
+    this.ensureStructuredResponse(response);
     return response.data;
   }
 
@@ -189,6 +235,7 @@ class ApiClient {
    */
   async put<T = unknown>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
     const response = await this.instance.put<T>(url, data, config);
+    this.ensureStructuredResponse(response);
     return response.data;
   }
 
@@ -197,6 +244,7 @@ class ApiClient {
    */
   async patch<T = unknown>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
     const response = await this.instance.patch<T>(url, data, config);
+    this.ensureStructuredResponse(response);
     return response.data;
   }
 
@@ -205,6 +253,7 @@ class ApiClient {
    */
   async delete<T = unknown>(url: string, config?: AxiosRequestConfig): Promise<T> {
     const response = await this.instance.delete<T>(url, config);
+    this.ensureStructuredResponse(response);
     return response.data;
   }
 

@@ -1,0 +1,213 @@
+@use '../styles/variables.scss' as *;
+
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-lg;
+}
+
+.pageHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: $spacing-md;
+  flex-wrap: wrap;
+}
+
+.pageTitle {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.description {
+  margin: 8px 0 0;
+  max-width: 760px;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.pageActions {
+  display: flex;
+  gap: $spacing-sm;
+  flex-wrap: wrap;
+}
+
+.statsGrid {
+  display: grid;
+  gap: $spacing-md;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+
+  @media (max-width: 860px) {
+    grid-template-columns: 1fr;
+  }
+}
+
+.statCard {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 132px;
+  justify-content: center;
+  background:
+    radial-gradient(circle at top right, rgba(255, 105, 75, 0.18), transparent 42%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent),
+    var(--bg-primary);
+}
+
+.statValue {
+  font-size: 34px;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.statLabel {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.cardHint {
+  color: var(--text-secondary);
+  font-size: 12px;
+
+  code {
+    font-family: $font-mono;
+    color: var(--text-primary);
+  }
+}
+
+.errorBox {
+  padding: $spacing-sm $spacing-md;
+  background: rgba($error-color, 0.1);
+  border: 1px solid rgba($error-color, 0.35);
+  border-radius: $radius-md;
+  color: var(--danger-color);
+  margin-bottom: $spacing-md;
+}
+
+.emptyState {
+  padding: $spacing-xl;
+  text-align: center;
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+  border-radius: $radius-md;
+  border: 1px dashed var(--border-color);
+}
+
+.keysGrid {
+  display: grid;
+  gap: $spacing-md;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+
+  @media (max-width: 900px) {
+    grid-template-columns: 1fr;
+  }
+}
+
+.keyCard {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-md;
+  padding: $spacing-lg;
+  border-radius: $radius-lg;
+  border: 1px solid color-mix(in srgb, var(--border-color) 80%, transparent);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent),
+    var(--bg-secondary);
+}
+
+.keyHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: $spacing-sm;
+  align-items: flex-start;
+}
+
+.keyTitle {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.keyMeta {
+  margin-top: 4px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.showButton {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--primary-color);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.keyValue {
+  padding: 14px 16px;
+  border-radius: $radius-md;
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid color-mix(in srgb, var(--border-color) 68%, transparent);
+  font-family: $font-mono;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text-primary);
+  word-break: break-all;
+}
+
+.keyActions {
+  display: flex;
+  gap: $spacing-sm;
+  flex-wrap: wrap;
+}
+
+.flowList {
+  display: grid;
+  gap: $spacing-md;
+}
+
+.flowItem {
+  display: flex;
+  gap: $spacing-md;
+  align-items: flex-start;
+}
+
+.flowStep {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: color-mix(in srgb, var(--primary-color) 24%, transparent);
+  color: var(--primary-color);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.flowTitle {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.flowText {
+  margin: 6px 0 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.modalBody {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-md;
+}
+
+.modalActions {
+  display: flex;
+  justify-content: flex-end;
+}

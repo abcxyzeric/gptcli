@@ -521,6 +521,35 @@ const readResponseError = async (response: Response) => {
   return text.trim() || `HTTP ${response.status}`;
 };
 
+const stringifyUnknown = (value: unknown) => {
+  if (typeof value === 'string') {
+    return value.trim();
+  }
+  if (value === null || value === undefined) {
+    return '';
+  }
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+};
+
+const buildUpstreamErrorMessage = async (response: Response, fallback: string) => {
+  const payload = await parseJsonSafe<Record<string, unknown>>(response.clone());
+  const detail =
+    stringifyUnknown(payload?.error_description) ||
+    stringifyUnknown(payload?.error) ||
+    stringifyUnknown(payload?.message) ||
+    (await readResponseError(response));
+
+  if (!detail) {
+    return `${fallback} (HTTP ${response.status})`;
+  }
+
+  return `${fallback} (HTTP ${response.status}): ${detail.replace(/\s+/g, ' ').trim().slice(0, 240)}`;
+};
+
 const sha256Hex = async (value: string) => {
   const digest = await crypto.subtle.digest('SHA-256', encoder.encode(value));
   return Array.from(new Uint8Array(digest))
@@ -806,7 +835,7 @@ const processCodexSession = async (env: AppEnv, session: OAuthSessionRecord): Pr
     await setOAuthSessionStatus(env, session, 'Bad Request');
     return { status: 'error', error: 'Bad Request' };
   }
-  if (callback.state && callback.state !== session.state) {
+  if (callback.state !== session.state) {
     await setOAuthSessionStatus(env, session, 'State code error');
     return { status: 'error', error: 'State code error' };
   }
@@ -830,7 +859,7 @@ const processCodexSession = async (env: AppEnv, session: OAuthSessionRecord): Pr
   });
 
   if (!response.ok) {
-    const message = 'Failed to exchange authorization code for tokens';
+    const message = await buildUpstreamErrorMessage(response, 'Failed to exchange authorization code for tokens');
     await setOAuthSessionStatus(env, session, message);
     return { status: 'error', error: message };
   }
@@ -889,7 +918,7 @@ const processAnthropicSession = async (
     await setOAuthSessionStatus(env, session, message);
     return { status: 'error', error: message };
   }
-  if (callback.state && callback.state !== session.state) {
+  if (callback.state !== session.state) {
     const message = 'State code error';
     await setOAuthSessionStatus(env, session, message);
     return { status: 'error', error: message };
@@ -921,7 +950,7 @@ const processAnthropicSession = async (
   });
 
   if (!response.ok) {
-    const message = 'Failed to exchange authorization code for tokens';
+    const message = await buildUpstreamErrorMessage(response, 'Failed to exchange authorization code for tokens');
     await setOAuthSessionStatus(env, session, message);
     return { status: 'error', error: message };
   }
@@ -1049,7 +1078,7 @@ const processAntigravitySession = async (
     await setOAuthSessionStatus(env, session, message);
     return { status: 'error', error: message };
   }
-  if (callback.state && callback.state !== session.state) {
+  if (callback.state !== session.state) {
     const message = 'Authentication failed: state mismatch';
     await setOAuthSessionStatus(env, session, message);
     return { status: 'error', error: message };
@@ -1073,7 +1102,7 @@ const processAntigravitySession = async (
   });
 
   if (!tokenResponse.ok) {
-    const message = 'Failed to exchange token';
+    const message = await buildUpstreamErrorMessage(tokenResponse, 'Failed to exchange token');
     await setOAuthSessionStatus(env, session, message);
     return { status: 'error', error: message };
   }
@@ -1359,7 +1388,7 @@ const processGeminiSession = async (env: AppEnv, session: OAuthSessionRecord): P
     await setOAuthSessionStatus(env, session, message);
     return { status: 'error', error: message };
   }
-  if (callback.state && callback.state !== session.state) {
+  if (callback.state !== session.state) {
     const message = 'Authentication failed: state mismatch';
     await setOAuthSessionStatus(env, session, message);
     return { status: 'error', error: message };
@@ -1383,7 +1412,7 @@ const processGeminiSession = async (env: AppEnv, session: OAuthSessionRecord): P
   });
 
   if (!tokenResponse.ok) {
-    const message = 'Failed to exchange token';
+    const message = await buildUpstreamErrorMessage(tokenResponse, 'Failed to exchange token');
     await setOAuthSessionStatus(env, session, message);
     return { status: 'error', error: message };
   }
@@ -1806,13 +1835,34 @@ export const submitUpstreamOAuthCallback = async (
   input: OAuthCallbackInput
 ) => {
   const provider = normalizeProvider(input.provider);
-  const { state, code, error, redirectUrl } = extractCallbackFields(input);
-  if (!state) {
-    throw new Error('state is required');
+  let state = '';
+  let code = '';
+  let error = '';
+  let redirectUrl = '';
+  try {
+    ({ state, code, error, redirectUrl } = extractCallbackFields(input));
+  } catch (caught) {
+    const message = caught instanceof Error ? caught.message : 'invalid redirect_url';
+    const badRequest = new Error(message) as Error & { status?: number };
+    badRequest.status = 400;
+    throw badRequest;
   }
-  validateOAuthState(state);
+  if (!state) {
+    const badRequest = new Error('state is required') as Error & { status?: number };
+    badRequest.status = 400;
+    throw badRequest;
+  }
+  try {
+    validateOAuthState(state);
+  } catch {
+    const badRequest = new Error('invalid state') as Error & { status?: number };
+    badRequest.status = 400;
+    throw badRequest;
+  }
   if (!code && !error) {
-    throw new Error('code or error is required');
+    const badRequest = new Error('code or error is required') as Error & { status?: number };
+    badRequest.status = 400;
+    throw badRequest;
   }
 
   const session = await getOAuthSession(env, userId, state);
@@ -1827,7 +1877,9 @@ export const submitUpstreamOAuthCallback = async (
     throw conflictError;
   }
   if (session.provider !== provider) {
-    throw new Error('provider does not match state');
+    const badRequest = new Error('provider does not match state') as Error & { status?: number };
+    badRequest.status = 400;
+    throw badRequest;
   }
 
   await saveCallbackToSession(env, session, {

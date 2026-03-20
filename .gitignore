@@ -19,6 +19,9 @@ node_modules
 dist
 dist-ssr
 *.local
+.dev.vars
+.wrangler
+.tmp
 skills
 
 # Editor directories and files

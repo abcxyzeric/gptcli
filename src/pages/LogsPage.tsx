@@ -69,8 +69,8 @@ export function LogsPage() {
   const { showNotification, showConfirmation } = useNotificationStore();
   const connectionStatus = useAuthStore((state) => state.connectionStatus);
   const apiBase = useAuthStore((state) => state.apiBase);
-  const managementKey = useAuthStore((state) => state.managementKey);
-  const traceScopeKey = `${apiBase}::${managementKey}`;
+  const currentUser = useAuthStore((state) => state.currentUser);
+  const traceScopeKey = `${apiBase}::${currentUser?.id || ''}`;
   const config = useConfigStore((state) => state.config);
   const requestLogEnabled = config?.requestLog ?? false;
 

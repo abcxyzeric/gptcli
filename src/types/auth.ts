@@ -1,24 +1,32 @@
-/**
- * 认证相关类型定义
- * 基于原项目 src/modules/login.js 和 src/core/connection.js
- */
-
-// 登录凭据
-export interface LoginCredentials {
-  apiBase: string;
-  managementKey: string;
+export interface SessionUser {
+  id: string;
+  email: string;
+  displayName: string;
+  avatarUrl: string | null;
+  providers: string[];
+  createdAt: string;
+  updatedAt: string;
 }
 
-// 认证状态
+export interface LoginCredentials {
+  email: string;
+  password: string;
+}
+
+export interface RegisterCredentials extends LoginCredentials {
+  confirmPassword: string;
+  displayName: string;
+}
+
 export interface AuthState {
   isAuthenticated: boolean;
   apiBase: string;
   managementKey: string;
+  currentUser: SessionUser | null;
   serverVersion: string | null;
   serverBuildDate: string | null;
 }
 
-// 连接状态
 export type ConnectionStatus = 'connected' | 'disconnected' | 'connecting' | 'error';
 
 export interface ConnectionInfo {

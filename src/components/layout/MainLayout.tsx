@@ -208,6 +208,7 @@ export function MainLayout() {
   const location = useLocation();
 
   const apiBase = useAuthStore((state) => state.apiBase);
+  const currentUser = useAuthStore((state) => state.currentUser);
   const connectionStatus = useAuthStore((state) => state.connectionStatus);
   const logout = useAuthStore((state) => state.logout);
 
@@ -551,6 +552,15 @@ export function MainLayout() {
             <span className="base">{apiBase || '-'}</span>
           </div>
 
+          {currentUser && (
+            <div className="connection">
+              <span className="status-badge muted">
+                {currentUser.displayName || currentUser.email}
+              </span>
+              <span className="base">{currentUser.email}</span>
+            </div>
+          )}
+
           <div className="header-actions">
             <Button
               className="mobile-menu-btn"
@@ -678,7 +688,14 @@ export function MainLayout() {
                 </div>
               )}
             </div>
-            <Button variant="ghost" size="sm" onClick={logout} title={t('header.logout')}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                void logout();
+              }}
+              title={t('header.logout')}
+            >
               {headerIcons.logout}
             </Button>
           </div>

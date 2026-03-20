@@ -49,8 +49,8 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
   loadUsageStats: async (options = {}) => {
     const force = options.force === true;
     const staleTimeMs = options.staleTimeMs ?? USAGE_STATS_STALE_TIME_MS;
-    const { apiBase = '', managementKey = '' } = useAuthStore.getState();
-    const scopeKey = `${apiBase}::${managementKey}`;
+    const { apiBase = '', currentUser } = useAuthStore.getState();
+    const scopeKey = `${apiBase}::${currentUser?.id || ''}`;
     const state = get();
     const scopeChanged = state.scopeKey !== scopeKey;
 

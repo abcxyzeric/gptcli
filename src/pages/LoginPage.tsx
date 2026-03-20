@@ -1,119 +1,119 @@
-import React, { useEffect, useMemo, useState, useCallback } from 'react';
-import { Navigate, useNavigate, useLocation } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
-import { SelectionCheckbox } from '@/components/ui/SelectionCheckbox';
 import { IconEye, IconEyeOff } from '@/components/ui/icons';
+import { INLINE_LOGO_JPEG } from '@/assets/logoInline';
 import { useAuthStore, useLanguageStore, useNotificationStore } from '@/stores';
-import {
-  detectApiBaseFromLocation,
-  getApiBaseOriginLabel,
-  isCrossOriginApiBase,
-  isSecureManagementApiBase,
-  normalizeApiBase
-} from '@/utils/connection';
+import { webAuthApi } from '@/services/webAuth';
 import { LANGUAGE_LABEL_KEYS, LANGUAGE_ORDER } from '@/utils/constants';
 import { isSupportedLanguage } from '@/utils/language';
-import { getApiBasePresetFromSearch, getRuntimeDefaultApiBase } from '@/utils/runtimeConfig';
-import { INLINE_LOGO_JPEG } from '@/assets/logoInline';
-import type { ApiError } from '@/types';
 import styles from './LoginPage.module.scss';
 
-/**
- * 将 API 错误转换为本地化的用户友好消息
- */
 type RedirectState = { from?: { pathname?: string } };
+type AuthMode = 'login' | 'register';
 
-function getLocalizedErrorMessage(
-  error: unknown,
-  t: (key: string, options?: Record<string, unknown>) => string
-): string {
-  const apiError = error as Partial<ApiError>;
-  const status = typeof apiError.status === 'number' ? apiError.status : undefined;
-  const code = typeof apiError.code === 'string' ? apiError.code : undefined;
-  const message =
-    error instanceof Error
-      ? error.message
-      : typeof apiError.message === 'string'
-        ? apiError.message
-        : typeof error === 'string'
-          ? error
-          : '';
-
-  // 根据 HTTP 状态码判断
-  if (status === 401) {
-    return t('login.error_unauthorized');
-  }
-  if (status === 403) {
-    return t('login.error_forbidden');
-  }
-  if (status === 404) {
-    return t('login.error_not_found');
-  }
-  if (status && status >= 500) {
-    return t('login.error_server');
+const getAuthErrorMessage = (rawError: string, t: (key: string, options?: Record<string, unknown>) => string) => {
+  const normalized = rawError.trim().toLowerCase();
+  if (!normalized) {
+    return '';
   }
 
-  // 根据 axios 错误码判断
-  if (code === 'ECONNABORTED' || message.toLowerCase().includes('timeout')) {
-    return t('login.error_timeout');
+  if (normalized.includes('not_configured')) {
+    return t('auth_portal.oauth_error_not_configured');
   }
-  if (code === 'ERR_NETWORK' || message.toLowerCase().includes('network error')) {
-    return t('login.error_network');
+  if (normalized.includes('state_invalid')) {
+    return t('auth_portal.oauth_error_state');
   }
-  if (code === 'ERR_CERT_AUTHORITY_INVALID' || message.toLowerCase().includes('certificate')) {
-    return t('login.error_ssl');
+  if (normalized.includes('token_exchange_failed') || normalized.includes('token_missing')) {
+    return t('auth_portal.oauth_error_token');
   }
-  if (code === 'ERR_HTML_RESPONSE' || message.toLowerCase().includes('returned html instead of json')) {
-    return t('login.error_static_site', {
-      defaultValue:
-        'Địa chỉ hiện tại chỉ đang trả về web tĩnh, chưa phải Management API của CLIProxyAPI. Hãy nhập đúng API base của backend thật.',
-    });
+  if (normalized.includes('profile_failed') || normalized.includes('profile_invalid')) {
+    return t('auth_portal.oauth_error_profile');
+  }
+  if (normalized.includes('access_denied')) {
+    return t('auth_portal.oauth_error_cancelled');
+  }
+  return t('auth_portal.oauth_error_unknown');
+};
+
+const SocialIcon = ({ provider }: { provider: 'google' | 'discord' }) => {
+  if (provider === 'google') {
+    return (
+      <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+        <path
+          fill="#EA4335"
+          d="M12 10.2v3.9h5.5c-.2 1.3-1.5 3.9-5.5 3.9-3.3 0-6.1-2.7-6.1-6.1S8.7 5.8 12 5.8c1.9 0 3.2.8 3.9 1.5l2.7-2.6C16.9 3.2 14.7 2.2 12 2.2A9.8 9.8 0 0 0 2.2 12 9.8 9.8 0 0 0 12 21.8c5.6 0 9.4-3.9 9.4-9.5 0-.6-.1-1.2-.2-1.8H12Z"
+        />
+        <path
+          fill="#34A853"
+          d="M2.2 16.1 5.3 13.7A6.02 6.02 0 0 0 12 18c3.9 0 5.3-2.6 5.5-3.9H12V18c-3.2 0-5.8-1.9-7-4.7Z"
+        />
+        <path
+          fill="#4A90E2"
+          d="M5.3 13.7A6.2 6.2 0 0 1 5 12c0-.6.1-1.2.3-1.7L2.2 7.9A9.72 9.72 0 0 0 1 12c0 1.6.4 3.1 1.2 4.1l3.1-2.4Z"
+        />
+        <path
+          fill="#FBBC05"
+          d="M12 5.8c2.1 0 3.4.9 4.1 1.6l3-3C17.2 2.8 14.9 2.2 12 2.2c-4.1 0-7.7 2.3-9.8 5.7l3.1 2.4C6.2 7.7 8.8 5.8 12 5.8Z"
+        />
+      </svg>
+    );
   }
 
-  // 检查 CORS 错误
-  if (message.toLowerCase().includes('cors') || message.toLowerCase().includes('cross-origin')) {
-    return t('login.error_cors');
-  }
-
-  // 默认错误消息
-  return t('login.error_invalid');
-}
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+      <path
+        fill="#5865F2"
+        d="M20.3 4.9A16.4 16.4 0 0 0 16.2 3l-.2.4c-.1.2-.2.5-.3.7a15.3 15.3 0 0 0-4.6 0l-.3-.7-.2-.4A16.4 16.4 0 0 0 6.5 4.9 17.1 17.1 0 0 0 3 16.5a16.6 16.6 0 0 0 5 2.5l1.1-1.8a10.5 10.5 0 0 1-1.7-.8l.4-.3a11.8 11.8 0 0 0 10.4 0l.4.3c-.5.3-1.1.6-1.7.8l1.1 1.8a16.6 16.6 0 0 0 5-2.5 17.1 17.1 0 0 0-3.5-11.6ZM9.5 14.2c-1 0-1.8-.9-1.8-2s.8-2 1.8-2 1.8.9 1.8 2-.8 2-1.8 2Zm5 0c-1 0-1.8-.9-1.8-2s.8-2 1.8-2 1.8.9 1.8 2-.8 2-1.8 2Z"
+      />
+    </svg>
+  );
+};
 
 export function LoginPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
-  const { showNotification, showConfirmation } = useNotificationStore();
+  const { showNotification } = useNotificationStore();
   const language = useLanguageStore((state) => state.language);
   const setLanguage = useLanguageStore((state) => state.setLanguage);
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const login = useAuthStore((state) => state.login);
+  const register = useAuthStore((state) => state.register);
   const restoreSession = useAuthStore((state) => state.restoreSession);
-  const storedBase = useAuthStore((state) => state.apiBase);
 
-  const [apiBase, setApiBase] = useState('');
-  const [managementKey, setManagementKey] = useState('');
-  const [showCustomBase, setShowCustomBase] = useState(false);
-  const [showKey, setShowKey] = useState(false);
+  const [mode, setMode] = useState<AuthMode>('login');
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [registerName, setRegisterName] = useState('');
+  const [registerEmail, setRegisterEmail] = useState('');
+  const [registerPassword, setRegisterPassword] = useState('');
+  const [registerConfirmPassword, setRegisterConfirmPassword] = useState('');
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
+  const [showRegisterPassword, setShowRegisterPassword] = useState(false);
+  const [showRegisterConfirm, setShowRegisterConfirm] = useState(false);
   const [loading, setLoading] = useState(false);
   const [autoLoading, setAutoLoading] = useState(true);
   const [autoLoginSuccess, setAutoLoginSuccess] = useState(false);
   const [error, setError] = useState('');
 
-  const detectedBase = useMemo(() => detectApiBaseFromLocation(), []);
-  const runtimeDefaultBase = useMemo(() => getRuntimeDefaultApiBase(), []);
-  const presetApiBase = useMemo(() => getApiBasePresetFromSearch(location.search), [location.search]);
+  const authError = useMemo(() => {
+    const search = new URLSearchParams(location.search);
+    return getAuthErrorMessage(search.get('authError') || '', t);
+  }, [location.search, t]);
+
   const languageOptions = useMemo(
     () =>
       LANGUAGE_ORDER.map((lang) => ({
         value: lang,
-        label: t(LANGUAGE_LABEL_KEYS[lang])
+        label: t(LANGUAGE_LABEL_KEYS[lang]),
       })),
     [t]
   );
+
   const handleLanguageChange = useCallback(
     (selectedLanguage: string) => {
       if (!isSupportedLanguage(selectedLanguage)) {
@@ -127,21 +127,16 @@ export function LoginPage() {
   useEffect(() => {
     const init = async () => {
       let didAutoLogin = false;
+
       try {
         const autoLoggedIn = await restoreSession();
         if (autoLoggedIn) {
           didAutoLogin = true;
           setAutoLoginSuccess(true);
-          // 延迟跳转，让用户看到成功动画
-          setTimeout(() => {
+          window.setTimeout(() => {
             const redirect = (location.state as RedirectState | null)?.from?.pathname || '/';
             navigate(redirect, { replace: true });
-          }, 1500);
-        } else {
-          const initialBase = presetApiBase || storedBase || runtimeDefaultBase || detectedBase;
-          setApiBase(initialBase);
-          setShowCustomBase(Boolean(initialBase && normalizeApiBase(initialBase) !== detectedBase));
-          setManagementKey('');
+          }, 900);
         }
       } finally {
         if (!didAutoLogin) {
@@ -150,110 +145,101 @@ export function LoginPage() {
       }
     };
 
-    init();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    void init();
+  }, [location.state, navigate, restoreSession]);
 
-  const performLogin = useCallback(
-    async (baseToUse: string) => {
-      setLoading(true);
-      setError('');
-
-      try {
-        await login({
-          apiBase: baseToUse,
-          managementKey: managementKey.trim()
-        });
-        showNotification(t('common.connected_status'), 'success');
-        navigate('/', { replace: true });
-      } catch (err: unknown) {
-        const message = getLocalizedErrorMessage(err, t);
-        setError(message);
-        showNotification(`${t('notification.login_failed')}: ${message}`, 'error');
-      } finally {
-        setLoading(false);
-      }
-    },
-    [login, managementKey, navigate, showNotification, t]
-  );
-
-  const handleSubmit = useCallback(async () => {
-    if (!managementKey.trim()) {
-      setError(t('login.error_required'));
+  const handleLogin = useCallback(async () => {
+    if (!loginEmail.trim() || !loginPassword) {
+      setError(t('auth_portal.required'));
       return;
     }
 
-    const baseToUse = apiBase ? normalizeApiBase(apiBase) : detectedBase;
-    if (!isSecureManagementApiBase(baseToUse)) {
-      const message = t('portal.login.api_base_security_error', {
-        defaultValue:
-          'Chỉ chấp nhận Management API qua HTTPS. HTTP chỉ được phép với localhost hoặc 127.0.0.1.'
+    setLoading(true);
+    setError('');
+
+    try {
+      await login({
+        email: loginEmail.trim(),
+        password: loginPassword,
       });
+      showNotification(t('auth_portal.login_success'), 'success');
+      navigate('/', { replace: true });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : t('auth_portal.login_failed');
       setError(message);
       showNotification(message, 'error');
+    } finally {
+      setLoading(false);
+    }
+  }, [login, loginEmail, loginPassword, navigate, showNotification, t]);
+
+  const handleRegister = useCallback(async () => {
+    if (!registerName.trim() || !registerEmail.trim() || !registerPassword || !registerConfirmPassword) {
+      setError(t('auth_portal.required'));
       return;
     }
 
-    if (isCrossOriginApiBase(baseToUse)) {
-      showConfirmation({
-        title: t('portal.login.cross_origin_confirm_title', {
-          defaultValue: 'Xác nhận gửi khóa quản trị'
-        }),
-        message: (
-          <div>
-            <p>
-              {t('portal.login.cross_origin_confirm_body', {
-                defaultValue:
-                  'Bạn sắp gửi khóa quản trị tới một Management API khác origin với trang hiện tại.'
-              })}
-            </p>
-            <p>
-              <strong>{getApiBaseOriginLabel(baseToUse)}</strong>
-            </p>
-          </div>
-        ),
-        confirmText: t('portal.login.cross_origin_confirm_action', {
-          defaultValue: 'Tiếp tục kết nối'
-        }),
-        cancelText: t('common.cancel'),
-        variant: 'primary',
-        onConfirm: () => performLogin(baseToUse)
+    setLoading(true);
+    setError('');
+
+    try {
+      await register({
+        displayName: registerName.trim(),
+        email: registerEmail.trim(),
+        password: registerPassword,
+        confirmPassword: registerConfirmPassword,
       });
-      return;
+      showNotification(t('auth_portal.register_success'), 'success');
+      navigate('/', { replace: true });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : t('auth_portal.register_failed');
+      setError(message);
+      showNotification(message, 'error');
+    } finally {
+      setLoading(false);
     }
-
-    await performLogin(baseToUse);
   }, [
-    apiBase,
-    detectedBase,
-    managementKey,
-    performLogin,
-    showConfirmation,
+    navigate,
+    register,
+    registerConfirmPassword,
+    registerEmail,
+    registerName,
+    registerPassword,
     showNotification,
-    t
+    t,
   ]);
 
-  const handleSubmitKeyDown = useCallback(
-    (event: React.KeyboardEvent) => {
-      if (event.key === 'Enter' && !loading) {
-        event.preventDefault();
-        handleSubmit();
+  const handleFormSubmit = useCallback(
+    async (event: React.FormEvent) => {
+      event.preventDefault();
+      if (loading) {
+        return;
       }
+
+      if (mode === 'login') {
+        await handleLogin();
+        return;
+      }
+
+      await handleRegister();
     },
-    [loading, handleSubmit]
+    [handleLogin, handleRegister, loading, mode]
   );
 
+  const startOAuth = useCallback((provider: 'google' | 'discord') => {
+    setError('');
+    webAuthApi.startOAuth(provider);
+  }, []);
+
+  const redirect = (location.state as RedirectState | null)?.from?.pathname || '/';
   if (isAuthenticated && !autoLoading && !autoLoginSuccess) {
-    const redirect = (location.state as RedirectState | null)?.from?.pathname || '/';
     return <Navigate to={redirect} replace />;
   }
 
-  // 显示启动动画（自动登录中或自动登录成功）
   const showSplash = autoLoading || autoLoginSuccess;
 
   return (
     <div className={styles.container}>
-      {/* 左侧品牌展示区 */}
       <div className={styles.brandPanel}>
         <div className={styles.brandContent}>
           <span className={styles.brandWord}>CLIP</span>
@@ -262,10 +248,8 @@ export function LoginPage() {
         </div>
       </div>
 
-      {/* 右侧功能交互区 */}
       <div className={styles.formPanel}>
         {showSplash ? (
-          /* 启动动画 */
           <div className={styles.splashContent}>
             <img src={INLINE_LOGO_JPEG} alt="ClipProxy" className={styles.splashLogo} />
             <h1 className={styles.splashTitle}>{t('splash.title', { defaultValue: 'ClipProxy' })}</h1>
@@ -277,18 +261,13 @@ export function LoginPage() {
             </div>
           </div>
         ) : (
-          /* 登录表单 */
           <div className={styles.formContent}>
-            {/* Logo */}
             <img src={INLINE_LOGO_JPEG} alt="ClipProxy Logo" className={styles.logo} />
 
-            {/* 登录表单卡片 */}
             <div className={styles.loginCard}>
               <div className={styles.loginHeader}>
                 <div className={styles.titleRow}>
-                  <div className={styles.title}>
-                    {t('portal.login.title', { defaultValue: 'ClipProxy Web Console' })}
-                  </div>
+                  <div className={styles.title}>{t('auth_portal.title')}</div>
                   <Select
                     className={styles.languageSelect}
                     value={language}
@@ -298,93 +277,172 @@ export function LoginPage() {
                     ariaLabel={t('language.switch')}
                   />
                 </div>
-                <div className={styles.subtitle}>
-                  {t('portal.login.subtitle', {
-                    defaultValue:
-                      'Connect to the CLIProxyAPI management endpoint to manage user keys, accounts, quota and usage from the browser.',
-                  })}
-                </div>
+                <div className={styles.subtitle}>{t('auth_portal.subtitle')}</div>
               </div>
 
-              <div className={styles.connectionBox}>
-                <div className={styles.label}>
-                  {t('portal.login.detected_api_base', { defaultValue: 'Detected API base' })}
-                </div>
-                <div className={styles.value}>{apiBase || detectedBase}</div>
-                <div className={styles.hint}>
-                  {t('portal.login.detected_api_hint', {
-                    defaultValue: 'Same-origin address is auto-detected from this page.',
-                  })}
-                </div>
+              <div className={styles.trustBox}>
+                <div className={styles.trustTitle}>{t('auth_portal.server_side_title')}</div>
+                <div className={styles.trustText}>{t('auth_portal.server_side_desc')}</div>
               </div>
 
-              <div className={styles.toggleAdvanced}>
-                <SelectionCheckbox
-                  checked={showCustomBase}
-                  onChange={setShowCustomBase}
-                  ariaLabel={t('portal.login.override_api_base', { defaultValue: 'Override API base' })}
-                  label={t('portal.login.override_api_base', { defaultValue: 'Override API base' })}
-                  labelClassName={styles.toggleLabel}
-                />
+              <div className={styles.modeTabs} role="tablist" aria-label={t('auth_portal.mode_label')}>
+                <button
+                  type="button"
+                  className={`${styles.modeTab} ${mode === 'login' ? styles.modeTabActive : ''}`}
+                  onClick={() => {
+                    setMode('login');
+                    setError('');
+                  }}
+                >
+                  {t('auth_portal.login_tab')}
+                </button>
+                <button
+                  type="button"
+                  className={`${styles.modeTab} ${mode === 'register' ? styles.modeTabActive : ''}`}
+                  onClick={() => {
+                    setMode('register');
+                    setError('');
+                  }}
+                >
+                  {t('auth_portal.register_tab')}
+                </button>
               </div>
 
-              {showCustomBase && (
-                <Input
-                  label={t('portal.login.api_base_url', { defaultValue: 'API base URL' })}
-                  placeholder={t('portal.login.api_base_placeholder', {
-                    defaultValue: 'https://example.com:8317',
-                  })}
-                  value={apiBase}
-                  onChange={(e) => setApiBase(e.target.value)}
-                  hint={t('portal.login.api_base_hint', {
-                    defaultValue:
-                      'Use this if the backend is hosted on another domain, port or Cloudflare tunnel.',
-                  })}
-                />
-              )}
+              {(authError || error) && <div className={styles.errorBox}>{authError || error}</div>}
 
-              <Input
-                autoFocus
-                label={t('portal.login.management_key', { defaultValue: 'Management key' })}
-                placeholder={t('portal.login.management_key_placeholder', {
-                  defaultValue: 'Enter your management key',
-                })}
-                type={showKey ? 'text' : 'password'}
-                value={managementKey}
-                onChange={(e) => setManagementKey(e.target.value)}
-                onKeyDown={handleSubmitKeyDown}
-                hint={t('portal.login.management_key_security_hint', {
-                  defaultValue:
-                    'Khóa quản trị chỉ được giữ trong bộ nhớ của tab hiện tại và sẽ không được lưu lại trên trình duyệt.'
-                })}
-                rightElement={
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    onClick={() => setShowKey((prev) => !prev)}
-                    aria-label={
-                      showKey
-                        ? t('login.hide_key', { defaultValue: '隐藏密钥' })
-                        : t('login.show_key', { defaultValue: '显示密钥' })
-                    }
-                    title={
-                      showKey
-                        ? t('login.hide_key', { defaultValue: '隐藏密钥' })
-                        : t('login.show_key', { defaultValue: '显示密钥' })
-                    }
-                  >
-                    {showKey ? <IconEyeOff size={16} /> : <IconEye size={16} />}
-                  </button>
-                }
-              />
+              <form className={styles.authForm} onSubmit={handleFormSubmit}>
+                {mode === 'login' ? (
+                  <>
+                    <Input
+                      autoFocus
+                      label={t('auth_portal.email')}
+                      placeholder="you@example.com"
+                      value={loginEmail}
+                      onChange={(event) => setLoginEmail(event.target.value)}
+                      autoComplete="email"
+                    />
+                    <Input
+                      label={t('auth_portal.password')}
+                      placeholder={t('auth_portal.password_placeholder')}
+                      type={showLoginPassword ? 'text' : 'password'}
+                      value={loginPassword}
+                      onChange={(event) => setLoginPassword(event.target.value)}
+                      autoComplete="current-password"
+                      rightElement={
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => setShowLoginPassword((prev) => !prev)}
+                          aria-label={
+                            showLoginPassword ? t('auth_portal.hide_password') : t('auth_portal.show_password')
+                          }
+                        >
+                          {showLoginPassword ? <IconEyeOff size={16} /> : <IconEye size={16} />}
+                        </button>
+                      }
+                    />
+                  </>
+                ) : (
+                  <>
+                    <Input
+                      autoFocus
+                      label={t('auth_portal.display_name')}
+                      placeholder={t('auth_portal.display_name_placeholder')}
+                      value={registerName}
+                      onChange={(event) => setRegisterName(event.target.value)}
+                      autoComplete="name"
+                    />
+                    <Input
+                      label={t('auth_portal.email')}
+                      placeholder="you@example.com"
+                      value={registerEmail}
+                      onChange={(event) => setRegisterEmail(event.target.value)}
+                      autoComplete="email"
+                    />
+                    <Input
+                      label={t('auth_portal.password')}
+                      placeholder={t('auth_portal.password_placeholder')}
+                      type={showRegisterPassword ? 'text' : 'password'}
+                      value={registerPassword}
+                      onChange={(event) => setRegisterPassword(event.target.value)}
+                      autoComplete="new-password"
+                      hint={t('auth_portal.password_hint')}
+                      rightElement={
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => setShowRegisterPassword((prev) => !prev)}
+                          aria-label={
+                            showRegisterPassword
+                              ? t('auth_portal.hide_password')
+                              : t('auth_portal.show_password')
+                          }
+                        >
+                          {showRegisterPassword ? <IconEyeOff size={16} /> : <IconEye size={16} />}
+                        </button>
+                      }
+                    />
+                    <Input
+                      label={t('auth_portal.confirm_password')}
+                      placeholder={t('auth_portal.confirm_password_placeholder')}
+                      type={showRegisterConfirm ? 'text' : 'password'}
+                      value={registerConfirmPassword}
+                      onChange={(event) => setRegisterConfirmPassword(event.target.value)}
+                      autoComplete="new-password"
+                      rightElement={
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => setShowRegisterConfirm((prev) => !prev)}
+                          aria-label={
+                            showRegisterConfirm
+                              ? t('auth_portal.hide_password')
+                              : t('auth_portal.show_password')
+                          }
+                        >
+                          {showRegisterConfirm ? <IconEyeOff size={16} /> : <IconEye size={16} />}
+                        </button>
+                      }
+                    />
+                  </>
+                )}
 
-              <Button fullWidth onClick={handleSubmit} loading={loading}>
-                {loading
-                  ? t('login.submitting', { defaultValue: 'Connecting...' })
-                  : t('portal.login.connect', { defaultValue: 'Connect' })}
-              </Button>
+                <Button type="submit" fullWidth loading={loading}>
+                  {mode === 'login' ? t('auth_portal.login_button') : t('auth_portal.register_button')}
+                </Button>
+              </form>
 
-              {error && <div className={styles.errorBox}>{error}</div>}
+              <div className={styles.divider}>
+                <span>{t('auth_portal.social_divider')}</span>
+              </div>
+
+              <div className={styles.socialGrid}>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className={styles.socialButton}
+                  onClick={() => startOAuth('google')}
+                >
+                  <span className={styles.socialButtonInner}>
+                    <SocialIcon provider="google" />
+                    <span>{t('auth_portal.google_button')}</span>
+                  </span>
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className={styles.socialButton}
+                  onClick={() => startOAuth('discord')}
+                >
+                  <span className={styles.socialButtonInner}>
+                    <SocialIcon provider="discord" />
+                    <span>{t('auth_portal.discord_button')}</span>
+                  </span>
+                </Button>
+              </div>
+
+              <div className={styles.footerNote}>{t('auth_portal.footer_note')}</div>
             </div>
           </div>
         )}

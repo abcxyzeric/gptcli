@@ -6,26 +6,25 @@ import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 export function ProtectedRoute({ children }: { children: ReactElement }) {
   const location = useLocation();
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
-  const managementKey = useAuthStore((state) => state.managementKey);
-  const apiBase = useAuthStore((state) => state.apiBase);
-  const checkAuth = useAuthStore((state) => state.checkAuth);
+  const hasRestoredSession = useAuthStore((state) => state.hasRestoredSession);
+  const restoreSession = useAuthStore((state) => state.restoreSession);
   const [checking, setChecking] = useState(false);
 
   useEffect(() => {
     const tryRestore = async () => {
-      if (!isAuthenticated && managementKey && apiBase) {
+      if (!hasRestoredSession && !isAuthenticated) {
         setChecking(true);
         try {
-          await checkAuth();
+          await restoreSession();
         } finally {
           setChecking(false);
         }
       }
     };
     tryRestore();
-  }, [apiBase, isAuthenticated, managementKey, checkAuth]);
+  }, [hasRestoredSession, isAuthenticated, restoreSession]);
 
-  if (checking) {
+  if (checking || !hasRestoredSession) {
     return (
       <div className="main-content">
         <LoadingSpinner />

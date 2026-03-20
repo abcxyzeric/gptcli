@@ -1,3 +1,10 @@
 name = "clipproxy-web-console"
-compatibility_date = "2026-03-19"
+compatibility_date = "2026-03-20"
 pages_build_output_dir = "dist"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "clipproxy-web-auth"
+database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+preview_database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+migrations_dir = "migrations"

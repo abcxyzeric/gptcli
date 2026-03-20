@@ -1,195 +1,321 @@
-/**
- * 认证状态管理
- * 从原项目 src/modules/login.js 和 src/core/connection.js 迁移
- */
-
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import type { AuthState, LoginCredentials, ConnectionStatus } from '@/types';
+import type {
+  AuthState,
+  ConnectionStatus,
+  LoginCredentials,
+  RegisterCredentials,
+} from '@/types';
 import { STORAGE_KEY_AUTH } from '@/utils/constants';
 import { secureStorage } from '@/services/storage/secureStorage';
 import { apiClient } from '@/services/api/client';
+import { webAuthApi } from '@/services/webAuth';
 import { useConfigStore } from './useConfigStore';
 import { useUsageStatsStore } from './useUsageStatsStore';
-import {
-  detectApiBaseFromLocation,
-  isSecureManagementApiBase,
-  normalizeApiBase
-} from '@/utils/connection';
+import { detectApiBaseFromLocation, normalizeApiBase } from '@/utils/connection';
 
 interface AuthStoreState extends AuthState {
   connectionStatus: ConnectionStatus;
   connectionError: string | null;
-
-  // 操作
+  hasRestoredSession: boolean;
   login: (credentials: LoginCredentials) => Promise<void>;
-  logout: () => void;
+  register: (credentials: RegisterCredentials) => Promise<void>;
+  logout: () => Promise<void>;
   checkAuth: () => Promise<boolean>;
   restoreSession: () => Promise<boolean>;
   updateServerVersion: (version: string | null, buildDate?: string | null) => void;
   updateConnectionStatus: (status: ConnectionStatus, error?: string | null) => void;
 }
 
-let restoreSessionPromise: Promise<boolean> | null = null;
-const AUTH_STORE_VERSION = 2;
-
 type PersistedAuthStore = Partial<
-  Pick<AuthStoreState, 'apiBase' | 'serverVersion' | 'serverBuildDate'>
+  Pick<AuthStoreState, 'apiBase' | 'serverVersion' | 'serverBuildDate' | 'currentUser'>
 >;
+
+let restoreSessionPromise: Promise<boolean> | null = null;
+const AUTH_STORE_VERSION = 3;
+
+const getDefaultApiBase = () => normalizeApiBase(detectApiBaseFromLocation());
+
+const configureApiClient = (apiBase: string) => {
+  apiClient.setConfig({
+    apiBase,
+    managementKey: '',
+  });
+};
+
+const resetDerivedStores = () => {
+  useConfigStore.getState().clearCache();
+  useUsageStatsStore.getState().clearUsageStats();
+};
+
+const syncBackendConnection = async () => {
+  await useConfigStore.getState().fetchConfig(undefined, true);
+};
+
+const clearLegacyKeys = () => {
+  secureStorage.migratePlaintextKeys(['apiBase', 'apiUrl']);
+  secureStorage.removeItem('managementKey');
+  localStorage.removeItem('isLoggedIn');
+};
 
 export const useAuthStore = create<AuthStoreState>()(
   persist(
-    (set, get) => ({
-      // 初始状态
+    (set) => ({
       isAuthenticated: false,
-      apiBase: '',
+      apiBase: getDefaultApiBase(),
       managementKey: '',
+      currentUser: null,
       serverVersion: null,
       serverBuildDate: null,
       connectionStatus: 'disconnected',
       connectionError: null,
+      hasRestoredSession: false,
 
-      // 恢复会话并自动登录
       restoreSession: () => {
-        if (restoreSessionPromise) return restoreSessionPromise;
-
-        restoreSessionPromise = (async () => {
-          secureStorage.migratePlaintextKeys(['apiBase', 'apiUrl']);
-          secureStorage.removeItem('managementKey');
-          localStorage.removeItem('isLoggedIn');
-
-          const legacyBase =
-            secureStorage.getItem<string>('apiBase') ||
-            secureStorage.getItem<string>('apiUrl', { encrypt: true });
-
-          const detectedBase = detectApiBaseFromLocation();
-          const { apiBase } = get();
-          const candidateBase = normalizeApiBase(apiBase || legacyBase || detectedBase);
-          const resolvedBase = isSecureManagementApiBase(candidateBase)
-            ? candidateBase
-            : detectedBase;
-
-          set({
-            apiBase: resolvedBase,
-            managementKey: '',
-            isAuthenticated: false,
-            connectionStatus: 'disconnected',
-            connectionError: null
-          });
-          apiClient.setConfig({ apiBase: resolvedBase, managementKey: '' });
-
-          return false;
-        })();
-
-        return restoreSessionPromise;
-      },
-
-      // 登录
-      login: async (credentials) => {
-        const apiBase = normalizeApiBase(credentials.apiBase);
-        const managementKey = credentials.managementKey.trim();
-
-        if (!isSecureManagementApiBase(apiBase)) {
-          throw new Error('Insecure management API base is not allowed. Use HTTPS or localhost over HTTP.');
+        if (restoreSessionPromise) {
+          return restoreSessionPromise;
         }
 
+        restoreSessionPromise = (async () => {
+          clearLegacyKeys();
+          const apiBase = getDefaultApiBase();
+          configureApiClient(apiBase);
+
+          try {
+            const session = await webAuthApi.getSession();
+
+            if (!session.authenticated || !session.user) {
+              set({
+                apiBase,
+                managementKey: '',
+                currentUser: null,
+                isAuthenticated: false,
+                connectionStatus: 'disconnected',
+                connectionError: null,
+                hasRestoredSession: true,
+              });
+              return false;
+            }
+
+            set({
+              apiBase,
+              managementKey: '',
+              currentUser: session.user,
+              isAuthenticated: true,
+              connectionStatus: 'connecting',
+              connectionError: null,
+              hasRestoredSession: true,
+            });
+
+            try {
+              await syncBackendConnection();
+              set({
+                connectionStatus: 'connected',
+                connectionError: null,
+              });
+            } catch (error: unknown) {
+              const message =
+                error instanceof Error
+                  ? error.message
+                  : typeof error === 'string'
+                    ? error
+                    : 'Backend unavailable';
+              set({
+                connectionStatus: 'error',
+                connectionError: message,
+              });
+            }
+
+            return true;
+          } catch {
+            set({
+              apiBase,
+              managementKey: '',
+              currentUser: null,
+              isAuthenticated: false,
+              connectionStatus: 'disconnected',
+              connectionError: null,
+              hasRestoredSession: true,
+            });
+            return false;
+          }
+        })();
+
+        return restoreSessionPromise.finally(() => {
+          restoreSessionPromise = null;
+        });
+      },
+
+      login: async (credentials) => {
+        const apiBase = getDefaultApiBase();
+        configureApiClient(apiBase);
+        set({
+          connectionStatus: 'connecting',
+          connectionError: null,
+        });
+
+        const user = await webAuthApi.login(credentials);
+
+        set({
+          apiBase,
+          managementKey: '',
+          currentUser: user,
+          isAuthenticated: true,
+          connectionStatus: 'connecting',
+          connectionError: null,
+          hasRestoredSession: true,
+        });
+
         try {
-          set({ connectionStatus: 'connecting' });
-
-          // 配置 API 客户端
-          apiClient.setConfig({
-            apiBase,
-            managementKey
-          });
-
-          // 测试连接 - 获取配置
-          await useConfigStore.getState().fetchConfig(undefined, true);
-
-          // 登录成功
+          await syncBackendConnection();
           set({
-            isAuthenticated: true,
-            apiBase,
-            managementKey,
             connectionStatus: 'connected',
-            connectionError: null
+            connectionError: null,
           });
-          localStorage.removeItem('isLoggedIn');
-          secureStorage.removeItem('managementKey');
         } catch (error: unknown) {
           const message =
             error instanceof Error
               ? error.message
               : typeof error === 'string'
                 ? error
-                : 'Connection failed';
+                : 'Backend unavailable';
           set({
             connectionStatus: 'error',
-            connectionError: message || 'Connection failed'
+            connectionError: message,
           });
-          throw error;
         }
       },
 
-      // 登出
-      logout: () => {
+      register: async (credentials) => {
+        const apiBase = getDefaultApiBase();
+        configureApiClient(apiBase);
+        set({
+          connectionStatus: 'connecting',
+          connectionError: null,
+        });
+
+        const user = await webAuthApi.register(credentials);
+
+        set({
+          apiBase,
+          managementKey: '',
+          currentUser: user,
+          isAuthenticated: true,
+          connectionStatus: 'connecting',
+          connectionError: null,
+          hasRestoredSession: true,
+        });
+
+        try {
+          await syncBackendConnection();
+          set({
+            connectionStatus: 'connected',
+            connectionError: null,
+          });
+        } catch (error: unknown) {
+          const message =
+            error instanceof Error
+              ? error.message
+              : typeof error === 'string'
+                ? error
+                : 'Backend unavailable';
+          set({
+            connectionStatus: 'error',
+            connectionError: message,
+          });
+        }
+      },
+
+      logout: async () => {
         restoreSessionPromise = null;
-        useConfigStore.getState().clearCache();
-        useUsageStatsStore.getState().clearUsageStats();
+        resetDerivedStores();
+        try {
+          await webAuthApi.logout();
+        } catch {
+          // Ignore logout API failures and clear local state anyway.
+        }
+
         set({
           isAuthenticated: false,
-          apiBase: '',
+          apiBase: getDefaultApiBase(),
           managementKey: '',
+          currentUser: null,
           serverVersion: null,
           serverBuildDate: null,
           connectionStatus: 'disconnected',
-          connectionError: null
+          connectionError: null,
+          hasRestoredSession: true,
         });
-        localStorage.removeItem('isLoggedIn');
-        secureStorage.removeItem('managementKey');
+
+        clearLegacyKeys();
       },
 
-      // 检查认证状态
       checkAuth: async () => {
-        const { managementKey, apiBase } = get();
-
-        if (!managementKey || !apiBase) {
-          return false;
-        }
+        const apiBase = getDefaultApiBase();
+        configureApiClient(apiBase);
 
         try {
-          // 重新配置客户端
-          apiClient.setConfig({ apiBase, managementKey });
-
-          // 验证连接
-          await useConfigStore.getState().fetchConfig();
+          const session = await webAuthApi.getSession();
+          if (!session.authenticated || !session.user) {
+            set({
+              isAuthenticated: false,
+              currentUser: null,
+              connectionStatus: 'disconnected',
+              connectionError: null,
+            });
+            return false;
+          }
 
           set({
+            apiBase,
+            managementKey: '',
+            currentUser: session.user,
             isAuthenticated: true,
-            connectionStatus: 'connected'
+            connectionStatus: 'connecting',
+            connectionError: null,
           });
+
+          try {
+            await syncBackendConnection();
+            set({
+              connectionStatus: 'connected',
+              connectionError: null,
+            });
+          } catch (error: unknown) {
+            const message =
+              error instanceof Error
+                ? error.message
+                : typeof error === 'string'
+                  ? error
+                  : 'Backend unavailable';
+            set({
+              connectionStatus: 'error',
+              connectionError: message,
+            });
+          }
 
           return true;
         } catch {
           set({
             isAuthenticated: false,
-            connectionStatus: 'error'
+            currentUser: null,
+            connectionStatus: 'disconnected',
+            connectionError: null,
           });
           return false;
         }
       },
 
-      // 更新服务器版本
       updateServerVersion: (version, buildDate) => {
         set({ serverVersion: version || null, serverBuildDate: buildDate || null });
       },
 
-      // 更新连接状态
       updateConnectionStatus: (status, error = null) => {
         set({
           connectionStatus: status,
-          connectionError: error
+          connectionError: error,
         });
-      }
+      },
     }),
     {
       name: STORAGE_KEY_AUTH,
@@ -204,41 +330,45 @@ export const useAuthStore = create<AuthStoreState>()(
         },
         removeItem: (name) => {
           secureStorage.removeItem(name);
-        }
+        },
       })),
       migrate: (persistedState: unknown) => {
         const state = (persistedState || {}) as PersistedAuthStore;
         return {
-          apiBase: typeof state.apiBase === 'string' ? state.apiBase : '',
+          apiBase: typeof state.apiBase === 'string' ? state.apiBase : getDefaultApiBase(),
           managementKey: '',
+          currentUser: state.currentUser || null,
           serverVersion: typeof state.serverVersion === 'string' ? state.serverVersion : null,
           serverBuildDate:
             typeof state.serverBuildDate === 'string' ? state.serverBuildDate : null,
           isAuthenticated: false,
           connectionStatus: 'disconnected',
-          connectionError: null
+          connectionError: null,
+          hasRestoredSession: false,
         };
       },
       partialize: (state) => ({
         apiBase: state.apiBase,
+        currentUser: state.currentUser,
         serverVersion: state.serverVersion,
-        serverBuildDate: state.serverBuildDate
-      })
+        serverBuildDate: state.serverBuildDate,
+      }),
     }
   )
 );
 
-// 监听全局未授权事件
 if (typeof window !== 'undefined') {
   window.addEventListener('unauthorized', () => {
-    useAuthStore.getState().logout();
+    void useAuthStore.getState().logout();
   });
 
   window.addEventListener(
     'server-version-update',
-    ((e: CustomEvent) => {
-      const detail = e.detail || {};
-      useAuthStore.getState().updateServerVersion(detail.version || null, detail.buildDate || null);
+    ((event: CustomEvent) => {
+      const detail = event.detail || {};
+      useAuthStore
+        .getState()
+        .updateServerVersion(detail.version || null, detail.buildDate || null);
     }) as EventListener
   );
 }

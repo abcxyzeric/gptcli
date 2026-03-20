@@ -5,8 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:pages": "npx wrangler pages dev dist --compatibility-date 2026-03-20",
     "build": "tsc && vite build",
     "deploy:cloudflare": "npx wrangler pages deploy dist --project-name clipproxy-web-console",
+    "db:migrate:local": "npx wrangler d1 migrations apply clipproxy-web-auth --local",
+    "db:migrate:remote": "npx wrangler d1 migrations apply clipproxy-web-auth --remote",
     "preview": "vite preview",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives",
     "format": "prettier --write \"src/**/*.{ts,tsx,css,scss}\"",

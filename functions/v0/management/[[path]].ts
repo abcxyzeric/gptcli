@@ -642,6 +642,9 @@ export const onRequest: PagesFunction<AppEnv> = async (context) => {
           code: String(body.code ?? '').trim(),
           state: String(body.state ?? '').trim(),
           error: String(body.error ?? '').trim(),
+          tokenResponse: isRecord(body.token_response)
+            ? (body.token_response as Record<string, unknown>)
+            : undefined,
         })
       );
     }

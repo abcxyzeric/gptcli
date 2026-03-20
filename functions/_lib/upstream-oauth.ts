@@ -36,6 +36,7 @@ const ANTIGRAVITY_SCOPES = [
   'https://www.googleapis.com/auth/userinfo.email',
   'https://www.googleapis.com/auth/userinfo.profile',
   'https://www.googleapis.com/auth/cclog',
+  'https://www.googleapis.com/auth/experimentsandconfigs',
 ];
 const ANTIGRAVITY_HEADERS = {
   'user-agent': 'google-api-nodejs-client/9.15.1',
@@ -140,6 +141,7 @@ type OAuthStartResponse = {
   status: 'ok';
   url: string;
   state: string;
+  code_verifier?: string;
 };
 
 type OAuthStatusResponse = {
@@ -153,6 +155,7 @@ type OAuthCallbackInput = {
   code?: string;
   state?: string;
   error?: string;
+  tokenResponse?: Record<string, unknown>;
 };
 
 type IFlowCookieResponse = {
@@ -624,7 +627,12 @@ const startCodexAuth = async (env: AppEnv, userId: string): Promise<OAuthStartRe
     id_token_add_organizations: 'true',
     codex_cli_simplified_flow: 'true',
   });
-  return { status: 'ok', url: buildAuthUrl(CODEX_AUTH_URL, params), state };
+  return {
+    status: 'ok',
+    url: buildAuthUrl(CODEX_AUTH_URL, params),
+    state,
+    code_verifier: pkce.codeVerifier,
+  };
 };
 
 const startAnthropicAuth = async (env: AppEnv, userId: string): Promise<OAuthStartResponse> => {
@@ -825,6 +833,54 @@ const saveJsonAuthFile = async (
     provider,
   });
 
+const saveCodexTokenBundle = async (
+  env: AppEnv,
+  session: OAuthSessionRecord,
+  tokenData: Record<string, unknown>
+) => {
+  const idToken = normalizeString(tokenData.id_token);
+  const accessToken = normalizeString(tokenData.access_token);
+  const refreshToken = normalizeString(tokenData.refresh_token);
+  const expiresIn = Number(tokenData.expires_in || 0) || 0;
+
+  if (!accessToken || !refreshToken) {
+    throw new Error('Codex token bundle thiếu access_token hoặc refresh_token.');
+  }
+
+  const claims = parseJwtClaims(idToken);
+  const email = normalizeString(tokenData.email) || normalizeString(claims?.email);
+  const accountId = normalizeString(claims?.['https://api.openai.com/auth']?.chatgpt_account_id);
+  const planType = normalizeString(claims?.['https://api.openai.com/auth']?.chatgpt_plan_type);
+  const hashedAccountId = accountId ? (await sha256Hex(accountId)).slice(0, 8) : '';
+  const fileName = buildCodexFileName(email, planType, hashedAccountId);
+  const expired = expiresIn > 0 ? new Date(Date.now() + expiresIn * 1000).toISOString() : '';
+
+  const content: Record<string, unknown> = {
+    id_token: idToken,
+    access_token: accessToken,
+    refresh_token: refreshToken,
+    account_id: accountId,
+    last_refresh: nowIso(),
+    email,
+    type: 'codex',
+    expired,
+  };
+  if (planType) {
+    content.plan_type = planType;
+  }
+  if (claims?.['https://api.openai.com/auth']?.chatgpt_subscription_active_start !== undefined) {
+    content.chatgpt_subscription_active_start =
+      claims['https://api.openai.com/auth']?.chatgpt_subscription_active_start;
+  }
+  if (claims?.['https://api.openai.com/auth']?.chatgpt_subscription_active_until !== undefined) {
+    content.chatgpt_subscription_active_until =
+      claims['https://api.openai.com/auth']?.chatgpt_subscription_active_until;
+  }
+
+  await saveJsonAuthFile(env, session.userId, fileName, content, 'codex');
+  await completeOAuthSessionsByProvider(env, session.userId, 'codex');
+};
+
 const processCodexSession = async (env: AppEnv, session: OAuthSessionRecord): Promise<OAuthStatusResponse> => {
   const callback = session.payload.callback;
   const pkce = session.payload.pkce;
@@ -865,42 +921,7 @@ const processCodexSession = async (env: AppEnv, session: OAuthSessionRecord): Pr
   }
 
   const tokenData = (await response.json()) as Record<string, unknown>;
-  const idToken = normalizeString(tokenData.id_token);
-  const accessToken = normalizeString(tokenData.access_token);
-  const refreshToken = normalizeString(tokenData.refresh_token);
-  const expiresIn = Number(tokenData.expires_in || 0) || 0;
-  const claims = parseJwtClaims(idToken);
-  const email = normalizeString(claims?.email);
-  const accountId = normalizeString(claims?.['https://api.openai.com/auth']?.chatgpt_account_id);
-  const planType = normalizeString(claims?.['https://api.openai.com/auth']?.chatgpt_plan_type);
-  const hashedAccountId = accountId ? (await sha256Hex(accountId)).slice(0, 8) : '';
-  const fileName = buildCodexFileName(email, planType, hashedAccountId);
-  const expired = expiresIn > 0 ? new Date(Date.now() + expiresIn * 1000).toISOString() : '';
-
-  const content: Record<string, unknown> = {
-    id_token: idToken,
-    access_token: accessToken,
-    refresh_token: refreshToken,
-    account_id: accountId,
-    last_refresh: nowIso(),
-    email,
-    type: 'codex',
-    expired,
-  };
-  if (planType) {
-    content.plan_type = planType;
-  }
-  if (claims?.['https://api.openai.com/auth']?.chatgpt_subscription_active_start !== undefined) {
-    content.chatgpt_subscription_active_start =
-      claims['https://api.openai.com/auth']?.chatgpt_subscription_active_start;
-  }
-  if (claims?.['https://api.openai.com/auth']?.chatgpt_subscription_active_until !== undefined) {
-    content.chatgpt_subscription_active_until =
-      claims['https://api.openai.com/auth']?.chatgpt_subscription_active_until;
-  }
-
-  await saveJsonAuthFile(env, session.userId, fileName, content, 'codex');
-  await completeOAuthSessionsByProvider(env, session.userId, 'codex');
+  await saveCodexTokenBundle(env, session, tokenData);
   return { status: 'ok' };
 };
 
@@ -1835,6 +1856,9 @@ export const submitUpstreamOAuthCallback = async (
   input: OAuthCallbackInput
 ) => {
   const provider = normalizeProvider(input.provider);
+  const tokenResponse = isRecord(input.tokenResponse)
+    ? (input.tokenResponse as Record<string, unknown>)
+    : null;
   let state = '';
   let code = '';
   let error = '';
@@ -1859,7 +1883,7 @@ export const submitUpstreamOAuthCallback = async (
     badRequest.status = 400;
     throw badRequest;
   }
-  if (!code && !error) {
+  if (!tokenResponse && !code && !error) {
     const badRequest = new Error('code or error is required') as Error & { status?: number };
     badRequest.status = 400;
     throw badRequest;
@@ -1880,6 +1904,11 @@ export const submitUpstreamOAuthCallback = async (
     const badRequest = new Error('provider does not match state') as Error & { status?: number };
     badRequest.status = 400;
     throw badRequest;
+  }
+
+  if (provider === 'codex' && tokenResponse) {
+    await saveCodexTokenBundle(env, session, tokenResponse);
+    return { status: 'ok' as const };
   }
 
   await saveCallbackToSession(env, session, {

@@ -22,6 +22,7 @@ import iconVertex from '@/assets/icons/vertex.svg';
 interface ProviderState {
   url?: string;
   state?: string;
+  codeVerifier?: string;
   status?: 'idle' | 'waiting' | 'success' | 'error';
   error?: string;
   polling?: boolean;
@@ -70,6 +71,49 @@ function getErrorMessage(error: unknown): string {
 function getErrorStatus(error: unknown): number | undefined {
   if (!isRecord(error)) return undefined;
   return typeof error.status === 'number' ? error.status : undefined;
+}
+
+async function exchangeCodexTokenInBrowser(redirectUrl: string, codeVerifier: string) {
+  const parsed = new URL(redirectUrl);
+  const code = parsed.searchParams.get('code')?.trim() || '';
+  if (!code) {
+    throw new Error('Callback URL của Codex đang thiếu mã code.');
+  }
+
+  const response = await fetch('https://auth.openai.com/oauth/token', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/x-www-form-urlencoded',
+      accept: 'application/json'
+    },
+    body: new URLSearchParams({
+      grant_type: 'authorization_code',
+      client_id: 'app_EMoamEEZ73f0CkXaXp7hrann',
+      code,
+      redirect_uri: 'http://localhost:1455/auth/callback',
+      code_verifier: codeVerifier
+    })
+  });
+
+  const rawText = await response.text();
+  let payload: Record<string, unknown> = {};
+  try {
+    payload = rawText ? (JSON.parse(rawText) as Record<string, unknown>) : {};
+  } catch {
+    payload = {};
+  }
+
+  if (!response.ok) {
+    const message =
+      (typeof payload.error_description === 'string' && payload.error_description) ||
+      (typeof payload.error === 'string' && payload.error) ||
+      (typeof payload.message === 'string' && payload.message) ||
+      rawText ||
+      `HTTP ${response.status}`;
+    throw new Error(`Codex token exchange lỗi: ${message}`);
+  }
+
+  return payload;
 }
 
 const PROVIDERS: { id: OAuthProvider; titleKey: string; hintKey: string; urlLabelKey: string; icon: string | { light: string; dark: string } }[] = [
@@ -180,6 +224,7 @@ export function OAuthPage() {
       updateProviderState(provider, {
         url: res.url,
         state: res.state,
+        codeVerifier: res.codeVerifier,
         status: res.state ? 'waiting' : 'idle',
         polling: Boolean(res.state)
       });
@@ -235,7 +280,24 @@ export function OAuthPage() {
       callbackError: undefined
     });
     try {
-      await oauthApi.submitCallback(provider, redirectUrl);
+      if (provider === 'codex') {
+        const providerState = states[provider] || {};
+        const codeVerifier = (providerState.codeVerifier || '').trim();
+        if (!codeVerifier) {
+          throw new Error('Thiếu code verifier của phiên Codex OAuth. Hãy bấm Đăng nhập lại từ đầu.');
+        }
+
+        const parsed = new URL(redirectUrl);
+        const callbackState = parsed.searchParams.get('state')?.trim() || '';
+        if (providerState.state && callbackState && providerState.state !== callbackState) {
+          throw new Error('State trong callback URL của Codex không khớp với phiên đăng nhập hiện tại.');
+        }
+
+        const tokenResponse = await exchangeCodexTokenInBrowser(redirectUrl, codeVerifier);
+        await oauthApi.submitCallback(provider, redirectUrl, { tokenResponse });
+      } else {
+        await oauthApi.submitCallback(provider, redirectUrl);
+      }
       updateProviderState(provider, { callbackSubmitting: false, callbackStatus: 'success' });
       showNotification(t('auth_login.oauth_callback_success'), 'success');
     } catch (err: unknown) {

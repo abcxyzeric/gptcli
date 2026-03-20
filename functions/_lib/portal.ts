@@ -247,6 +247,18 @@ const normalizeStatusMessage = (message: string) => {
   return trimmed || null;
 };
 
+const constantTimeEqualStrings = (left: string, right: string) => {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  let result = 0;
+  for (let index = 0; index < left.length; index += 1) {
+    result |= left.charCodeAt(index) ^ right.charCodeAt(index);
+  }
+  return result === 0;
+};
+
 const getDataSecret = (env: AppEnv) =>
   ensureEnv(env.DATA_ENCRYPTION_SECRET || env.SESSION_SECRET, 'DATA_ENCRYPTION_SECRET');
 
@@ -439,6 +451,37 @@ export const loadPortalState = async (env: AppEnv, userId: string): Promise<Port
   return { config, usage };
 };
 
+export const findUserIdByApiKey = async (env: AppEnv, rawApiKey: string): Promise<string | null> => {
+  const apiKey = String(rawApiKey || '').trim();
+  if (!apiKey) {
+    return null;
+  }
+
+  const result = await env.DB.prepare(
+    `
+      SELECT user_id, config_ciphertext
+      FROM portal_state
+    `
+  ).all<{ user_id: string; config_ciphertext: string }>();
+
+  for (const row of result.results || []) {
+    try {
+      const config = ensureConfigShape(
+        await decryptJson<JsonRecord>(env, row.config_ciphertext, getStateAad(row.user_id, 'config'))
+      );
+      const keys = Array.isArray(config['api-keys']) ? config['api-keys'] : [];
+      const matched = keys.some((item) => constantTimeEqualStrings(String(item ?? '').trim(), apiKey));
+      if (matched) {
+        return row.user_id;
+      }
+    } catch {
+      // Ignore broken rows so one bad record does not block public auth.
+    }
+  }
+
+  return null;
+};
+
 export const savePortalState = async (env: AppEnv, userId: string, state: PortalState) => {
   const normalizedState: PortalState = {
     config: ensureConfigShape(state.config),
@@ -527,15 +570,15 @@ const guessProviderFromContent = (content: string, parsed: Record<string, unknow
   if (provider) {
     return guessProviderFromName(provider);
   }
+  if (typeof parsed.refresh_token === 'string' && typeof parsed.client_id === 'string') {
+    return 'gemini-cli';
+  }
   if (
     typeof parsed.client_email === 'string' ||
     typeof parsed.project_id === 'string' ||
     typeof parsed.quota_project_id === 'string'
   ) {
     return 'vertex';
-  }
-  if (typeof parsed.refresh_token === 'string' && typeof parsed.client_id === 'string') {
-    return 'gemini-cli';
   }
   if (typeof parsed.cookie === 'string') {
     return 'iflow';

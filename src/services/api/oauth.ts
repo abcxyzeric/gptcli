@@ -16,6 +16,7 @@ export type OAuthProvider =
 export interface OAuthStartResponse {
   url: string;
   state?: string;
+  codeVerifier?: string;
 }
 
 export interface OAuthCallbackResponse {
@@ -48,6 +49,9 @@ function ensureOAuthStartResponse(value: unknown): OAuthStartResponse {
   const result: OAuthStartResponse = { url };
   if (typeof value.state === 'string' && value.state.trim()) {
     result.state = value.state.trim();
+  }
+  if (typeof value.code_verifier === 'string' && value.code_verifier.trim()) {
+    result.codeVerifier = value.code_verifier.trim();
   }
   return result;
 }
@@ -94,11 +98,16 @@ export const oauthApi = {
     return ensureOAuthStatusResponse(response);
   },
 
-  submitCallback: (provider: OAuthProvider, redirectUrl: string) => {
+  submitCallback: (
+    provider: OAuthProvider,
+    redirectUrl: string,
+    options?: { tokenResponse?: Record<string, unknown> }
+  ) => {
     const callbackProvider = CALLBACK_PROVIDER_MAP[provider] ?? provider;
     return apiClient.post<OAuthCallbackResponse>('/oauth-callback', {
       provider: callbackProvider,
-      redirect_url: redirectUrl
+      redirect_url: redirectUrl,
+      ...(options?.tokenResponse ? { token_response: options.tokenResponse } : {})
     });
   },
 

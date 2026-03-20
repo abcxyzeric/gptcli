@@ -1,21 +1,26 @@
-import { getSession } from '../_lib/auth';
-import { AppEnv, errorResponse, json } from '../_lib/http';
-import { getAllAvailableModels, withServerHeaders } from '../_lib/portal';
+import { AppEnv } from '../_lib/http';
+import {
+  authenticatePublicRequest,
+  buildOpenAiModelsPayload,
+  getPublicModelsForUser,
+  handlePublicOptions,
+  publicError,
+  publicJson,
+} from '../_lib/public-api';
 
-const ok = (data: unknown, init: ResponseInit = {}) => withServerHeaders(json(data, init));
-const fail = (message: string, status = 400) => withServerHeaders(errorResponse(message, status));
+export const onRequestOptions: PagesFunction<AppEnv> = async () => handlePublicOptions();
 
 export const onRequestGet: PagesFunction<AppEnv> = async (context) => {
-  const session = await getSession(context.env, context.request);
-  if (!session) {
-    return fail('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.', 401);
+  const auth = await authenticatePublicRequest(context.env, context.request);
+  if (!auth) {
+    return publicError('Thiếu hoặc sai Bearer access key.', 401);
   }
 
   try {
-    const models = await getAllAvailableModels(context.env, session.user.id);
-    return ok({ data: models });
+    const models = await getPublicModelsForUser(context.env, auth.userId);
+    return publicJson(buildOpenAiModelsPayload(models));
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Không thể tải danh sách model.';
-    return fail(message, 500);
+    return publicError(message, 500);
   }
 };

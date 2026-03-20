@@ -7,7 +7,7 @@ import {
   shouldUseSecureCookies,
 } from './http';
 
-const PASSWORD_ITERATIONS = 310_000;
+const PASSWORD_ITERATIONS = 100_000;
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
 const OAUTH_STATE_MAX_AGE_SECONDS = 60 * 10;
 

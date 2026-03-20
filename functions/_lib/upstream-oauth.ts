@@ -57,6 +57,7 @@ const GEMINI_USERINFO_URL = 'https://www.googleapis.com/oauth2/v1/userinfo?alt=j
 const GEMINI_PROJECTS_URL = 'https://cloudresourcemanager.googleapis.com/v1/projects';
 const GEMINI_SERVICE_USAGE_URL = 'https://serviceusage.googleapis.com';
 const GEMINI_REQUIRED_SERVICES = ['cloudaicompanion.googleapis.com'];
+const GEMINI_SMOKE_TEST_MODEL = 'gemini-2.5-flash';
 const GEMINI_SCOPES = [
   'https://www.googleapis.com/auth/cloud-platform',
   'https://www.googleapis.com/auth/userinfo.email',
@@ -64,6 +65,7 @@ const GEMINI_SCOPES = [
 ];
 const GEMINI_USER_AGENT =
   'GeminiCLI/1.0.0 (Cloudflare Pages Functions; +https://gptcli.pages.dev)';
+const GEMINI_API_CLIENT = 'google-genai-sdk/1.41.0 gl-node/v22.19.0';
 
 const QWEN_DEVICE_CODE_URL = 'https://chat.qwen.ai/api/v1/oauth2/device/code';
 const QWEN_TOKEN_URL = 'https://chat.qwen.ai/api/v1/oauth2/token';
@@ -192,6 +194,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 const normalizeString = (value: unknown) => String(value ?? '').trim();
 const nowIso = () => new Date().toISOString();
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const base64UrlEncode = (value: Uint8Array) => {
   let binary = '';
@@ -1255,6 +1258,134 @@ const extractProjectId = (value: unknown) => {
   return '';
 };
 
+const prioritizeGeminiProject = (projectId: string) => {
+  const normalized = normalizeString(projectId).toLowerCase();
+  if (!normalized) return 99;
+  if (normalized.startsWith('named-operator-')) return 0;
+  if (normalized.startsWith('gen-lang-client-')) return 3;
+  return 1;
+};
+
+const uniqueGeminiProjects = (projectIds: string[]) =>
+  Array.from(
+    new Set(
+      projectIds
+        .map((item) => normalizeString(item))
+        .filter(Boolean)
+        .sort((left, right) => {
+          const scoreDelta = prioritizeGeminiProject(left) - prioritizeGeminiProject(right);
+          if (scoreDelta !== 0) {
+            return scoreDelta;
+          }
+          return left.localeCompare(right);
+        })
+    )
+  );
+
+const testGeminiProject = async (accessToken: string, projectId: string) => {
+  const response = await fetch('https://cloudcode-pa.googleapis.com/v1internal:generateContent', {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${accessToken}`,
+      'content-type': 'application/json',
+      accept: 'application/json',
+      'user-agent': GEMINI_USER_AGENT,
+      'x-goog-api-client': GEMINI_API_CLIENT,
+    },
+    body: JSON.stringify({
+      project: projectId,
+      model: GEMINI_SMOKE_TEST_MODEL,
+      request: {
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              {
+                text: 'ping',
+              },
+            ],
+          },
+        ],
+      },
+    }),
+  });
+
+  if (response.ok) {
+    return '';
+  }
+
+  return `project ${projectId}: ${await readResponseError(response)}`;
+};
+
+const collectGeminiProjectCandidates = async (
+  accessToken: string,
+  requestedProject: string
+): Promise<{ candidates: string[]; auto: boolean }> => {
+  const metadata = {
+    ideType: 'IDE_UNSPECIFIED',
+    platform: 'PLATFORM_UNSPECIFIED',
+    pluginType: 'GEMINI',
+  };
+  const normalizedRequest = requestedProject.trim();
+  const loadBody: Record<string, unknown> = { metadata };
+  if (normalizedRequest) {
+    loadBody.cloudaicompanionProject = normalizedRequest;
+  }
+
+  const loadResp = await callGeminiCli(accessToken, 'loadCodeAssist', loadBody);
+  let tierId = 'legacy-tier';
+  if (Array.isArray(loadResp.allowedTiers)) {
+    for (const tier of loadResp.allowedTiers) {
+      if (!isRecord(tier)) continue;
+      if (tier.isDefault === true && normalizeString(tier.id)) {
+        tierId = normalizeString(tier.id);
+        break;
+      }
+    }
+  }
+
+  const candidates: string[] = [];
+  if (normalizedRequest) {
+    candidates.push(normalizedRequest);
+  }
+  const loadProject = extractProjectId(loadResp.cloudaicompanionProject);
+  if (loadProject) {
+    candidates.push(loadProject);
+  }
+
+  if (!normalizedRequest) {
+    for (let attempt = 0; attempt < 15; attempt += 1) {
+      const onboardResp = await callGeminiCli(accessToken, 'onboardUser', {
+        tierId,
+        metadata,
+      });
+      if (onboardResp.done === true) {
+        if (isRecord(onboardResp.response)) {
+          const discoveredProject = extractProjectId(onboardResp.response.cloudaicompanionProject);
+          if (discoveredProject) {
+            candidates.push(discoveredProject);
+          }
+        }
+        break;
+      }
+      await sleep(2000);
+    }
+
+    try {
+      candidates.push(...(await fetchGcpProjects(accessToken)));
+    } catch (error) {
+      if (candidates.length === 0) {
+        throw error;
+      }
+    }
+  }
+
+  return {
+    candidates: uniqueGeminiProjects(candidates),
+    auto: !normalizedRequest,
+  };
+};
+
 const performGeminiSetup = async (
   accessToken: string,
   requestedProject: string
@@ -1265,16 +1396,7 @@ const performGeminiSetup = async (
     pluginType: 'GEMINI',
   };
   let resolvedRequest = requestedProject.trim();
-  let auto = false;
-
-  if (!resolvedRequest) {
-    const projects = await fetchGcpProjects(accessToken);
-    if (!projects.length) {
-      throw new Error('no Google Cloud projects available for this account');
-    }
-    resolvedRequest = projects[0];
-    auto = true;
-  }
+  const auto = !resolvedRequest;
 
   const loadBody: Record<string, unknown> = { metadata };
   if (resolvedRequest) {
@@ -1310,7 +1432,7 @@ const performGeminiSetup = async (
         }
         break;
       }
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      await sleep(2000);
     }
     if (!projectId) {
       throw new Error('gemini cli: project selection required');
@@ -1345,7 +1467,7 @@ const performGeminiSetup = async (
       return { projectId, auto };
     }
 
-    await new Promise((resolve) => setTimeout(resolve, 5000));
+    await sleep(5000);
   }
 
   throw new Error('Failed to complete Gemini CLI onboarding');
@@ -1397,6 +1519,16 @@ const ensureGeminiProjectsEnabled = async (accessToken: string, projectIds: stri
       throw new Error(`project activation required: ${errorMessage}`);
     }
   }
+};
+
+const activateGeminiProject = async (accessToken: string, projectId: string) => {
+  const result = await performGeminiSetup(accessToken, projectId);
+  await ensureGeminiProjectsEnabled(accessToken, [result.projectId]);
+  const smokeError = await testGeminiProject(accessToken, result.projectId);
+  if (smokeError) {
+    throw new Error(smokeError);
+  }
+  return result;
 };
 
 const processGeminiSession = async (env: AppEnv, session: OAuthSessionRecord): Promise<OAuthStatusResponse> => {
@@ -1471,35 +1603,83 @@ const processGeminiSession = async (env: AppEnv, session: OAuthSessionRecord): P
 
   try {
     if (requestedProjectId.toUpperCase() === 'ALL') {
-      const projects = await fetchGcpProjects(accessToken);
+      const projects = uniqueGeminiProjects(await fetchGcpProjects(accessToken));
       if (!projects.length) {
         throw new Error('no Google Cloud projects available for this account');
       }
       const activated: string[] = [];
+      let firstError = '';
       for (const projectId of projects) {
-        const result = await performGeminiSetup(accessToken, projectId);
-        activated.push(result.projectId);
+        try {
+          const result = await activateGeminiProject(accessToken, projectId);
+          activated.push(result.projectId);
+        } catch (error) {
+          if (!firstError) {
+            firstError = error instanceof Error ? error.message : 'Failed to activate project';
+          }
+        }
       }
       projectIds = Array.from(new Set(activated.filter(Boolean)));
-      await ensureGeminiProjectsEnabled(accessToken, projectIds);
+      if (!projectIds.length) {
+        throw new Error(firstError || 'no usable Google Cloud projects available for this account');
+      }
       checked = true;
     } else if (requestedProjectId.toUpperCase() === 'GOOGLE_ONE') {
-      const result = await performGeminiSetup(accessToken, '');
-      if (!result.projectId) {
+      const { candidates } = await collectGeminiProjectCandidates(accessToken, '');
+      if (!candidates.length) {
         throw new Error('Google One auto-discovery returned empty project ID');
       }
-      projectIds = [result.projectId];
-      auto = false;
-      await ensureGeminiProjectsEnabled(accessToken, projectIds);
+      let selectedProjectId = '';
+      let firstError = '';
+      for (const candidate of candidates) {
+        try {
+          const result = await activateGeminiProject(accessToken, candidate);
+          selectedProjectId = result.projectId;
+          break;
+        } catch (error) {
+          if (!firstError) {
+            firstError = error instanceof Error ? error.message : 'Failed to activate project';
+          }
+        }
+      }
+      if (!selectedProjectId) {
+        throw new Error(firstError || 'Google One auto-discovery returned empty project ID');
+      }
+      projectIds = [selectedProjectId];
+      auto = true;
       checked = true;
     } else {
-      const result = await performGeminiSetup(accessToken, requestedProjectId);
-      if (!result.projectId) {
+      const autoRequest = !requestedProjectId;
+      const { candidates, auto: collectedAuto } = await collectGeminiProjectCandidates(
+        accessToken,
+        requestedProjectId
+      );
+      if (!candidates.length) {
         throw new Error('Failed to resolve project ID');
       }
-      projectIds = [result.projectId];
-      auto = result.auto;
-      await ensureGeminiProjectsEnabled(accessToken, projectIds);
+      let selectedProjectId = '';
+      let selectedAuto = collectedAuto;
+      let firstError = '';
+      for (const candidate of candidates) {
+        try {
+          const result = await activateGeminiProject(accessToken, candidate);
+          selectedProjectId = result.projectId;
+          selectedAuto = result.auto || autoRequest;
+          break;
+        } catch (error) {
+          if (!firstError) {
+            firstError = error instanceof Error ? error.message : 'Failed to activate project';
+          }
+          if (!autoRequest) {
+            break;
+          }
+        }
+      }
+      if (!selectedProjectId) {
+        throw new Error(firstError || 'Failed to resolve project ID');
+      }
+      projectIds = [selectedProjectId];
+      auto = selectedAuto;
       checked = true;
     }
   } catch (error) {

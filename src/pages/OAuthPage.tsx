@@ -204,7 +204,8 @@ export function OAuthPage() {
         ? 'ALL'
         : rawProjectId
       : undefined;
-    // 项目 ID 可选：留空自动选择第一个可用项目；输入 ALL 获取全部项目
+    // Gemini CLI project ID là tùy chọn: để trống sẽ tự dò project dùng được,
+    // còn ALL sẽ thử bật và kiểm tra toàn bộ project nhìn thấy trong tài khoản.
     if (provider === 'gemini-cli') {
       updateProviderState(provider, { projectIdError: undefined });
     }

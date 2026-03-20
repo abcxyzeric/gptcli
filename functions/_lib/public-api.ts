@@ -160,6 +160,20 @@ const readBearerToken = (request: Request) => {
   return authorization;
 };
 
+const readPublicApiKey = (request: Request) => {
+  const bearer = readBearerToken(request);
+  if (bearer) return bearer;
+
+  const url = new URL(request.url);
+  const queryKey = normalizeString(url.searchParams.get('key'));
+  if (queryKey) return queryKey;
+
+  const googKey = normalizeString(request.headers.get('x-goog-api-key'));
+  if (googKey) return googKey;
+
+  return '';
+};
+
 const buildCorsHeaders = (headers?: HeadersInit) => {
   const next = new Headers(headers);
   next.set('access-control-allow-origin', '*');
@@ -207,7 +221,7 @@ export const authenticatePublicRequest = async (
     };
   }
 
-  const apiKey = readBearerToken(request);
+  const apiKey = readPublicApiKey(request);
   if (!apiKey) {
     return null;
   }
@@ -265,6 +279,17 @@ export const buildOpenAiModelsPayload = (models: ModelDefinition[]) => ({
     owned_by: model.owned_by || 'clipproxy',
     ...(model.display_name ? { display_name: model.display_name } : {}),
   })),
+});
+
+export const buildGoogleAiStudioModelsPayload = (models: ModelDefinition[]) => ({
+  models: models
+    .filter((model) => normalizeString(model.id).toLowerCase().startsWith('gemini'))
+    .map((model) => ({
+      name: `models/${model.id}`,
+      displayName: model.display_name || model.id,
+      description: model.display_name || model.id,
+      supportedGenerationMethods: ['generateContent', 'streamGenerateContent'],
+    })),
 });
 
 const parseJsonSafe = async <T>(response: Response): Promise<T | null> => {
@@ -772,6 +797,23 @@ const buildSyntheticOpenAiStream = (completion: OpenAiCompletion) => {
   return chunks.join('');
 };
 
+const normalizeGeminiApiPayload = (
+  payload: Record<string, unknown>,
+  requestedModel: string
+): Record<string, unknown> => {
+  const root = isRecord(payload.response) ? { ...(payload.response as Record<string, unknown>) } : { ...payload };
+  if (!normalizeString(root.modelVersion)) {
+    root.modelVersion = normalizeString(payload.modelVersion) || requestedModel;
+  }
+  if (!normalizeString(root.responseId) && normalizeString(payload.responseId)) {
+    root.responseId = normalizeString(payload.responseId);
+  }
+  return root;
+};
+
+const buildSyntheticGeminiStream = (payload: Record<string, unknown>) =>
+  `data: ${JSON.stringify(payload)}\n\ndata: [DONE]\n\n`;
+
 const listGoogleAuthForModel = async (
   env: AppEnv,
   userId: string,
@@ -908,7 +950,59 @@ const refreshGoogleCredentialIfNeeded = async (
   };
 };
 
-export const runGeminiOpenAiChatCompletion = async (
+const executeGeminiUpstreamRequest = async (
+  env: AppEnv,
+  userId: string,
+  model: string,
+  upstreamBodyBase: Record<string, unknown>
+) => {
+  const candidates = await listGoogleAuthForModel(env, userId, model);
+  let lastError = 'Khong co credential Gemini nao chay thanh cong.';
+
+  for (const candidate of candidates) {
+    try {
+      const selection = await refreshGoogleCredentialIfNeeded(env, userId, candidate);
+      const accessToken = selection.credential.accessToken;
+      if (!accessToken) {
+        throw new Error('Credential Google chua co access token hop le.');
+      }
+
+      const upstreamBody = {
+        ...upstreamBodyBase,
+        project: selection.credential.projectId,
+        model,
+      };
+
+      const upstreamResponse = await fetch(GEMINI_CLI_GENERATE_URL, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${accessToken}`,
+          'content-type': 'application/json',
+          accept: 'application/json',
+          'user-agent': GEMINI_USER_AGENT,
+          'x-goog-api-client': GEMINI_API_CLIENT,
+        },
+        body: JSON.stringify(upstreamBody),
+      });
+
+      if (!upstreamResponse.ok) {
+        throw new Error(`Gemini CLI upstream loi ${upstreamResponse.status}: ${await readResponseError(upstreamResponse)}`);
+      }
+
+      const upstreamPayload = ((await upstreamResponse.json()) as Record<string, unknown>) || {};
+      return {
+        selection,
+        payload: upstreamPayload,
+      };
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : 'Credential Gemini hien tai khong dung duoc.';
+    }
+  }
+
+  throw new Error(lastError);
+};
+
+const legacyRunGeminiOpenAiChatCompletionUnused = async (
   env: AppEnv,
   userId: string,
   requestBody: OpenAiChatRequest
@@ -978,4 +1072,74 @@ export const runGeminiOpenAiChatCompletion = async (
     failed: true,
   });
   throw new Error(lastError);
+};
+
+export const runGeminiOpenAiChatCompletion = async (
+  env: AppEnv,
+  userId: string,
+  requestBody: OpenAiChatRequest
+) => {
+  const model = normalizeString(requestBody.model) || 'gemini-2.5-pro';
+  const upstreamBodyBase = buildGeminiRequestFromOpenAi(requestBody) as Record<string, unknown>;
+  const { payload, selection } = await executeGeminiUpstreamRequest(env, userId, model, upstreamBodyBase);
+  const completion = buildOpenAiCompletionFromGemini(payload, model);
+
+  await upsertUsageEvent(env, userId, {
+    endpoint: 'POST /v1/chat/completions',
+    model,
+    source: 'cloudcode-pa.googleapis.com',
+    authIndex: selection.authIndex,
+    failed: false,
+    inputTokens: completion.usage?.prompt_tokens,
+    outputTokens: completion.usage?.completion_tokens,
+    cachedTokens: completion.usage?.prompt_tokens_details?.cached_tokens,
+    reasoningTokens: completion.usage?.completion_tokens_details?.reasoning_tokens,
+  });
+
+  return {
+    completion,
+    streamText: requestBody.stream ? buildSyntheticOpenAiStream(completion) : '',
+  };
+};
+
+export const runGeminiGoogleAiStudioRequest = async (
+  env: AppEnv,
+  userId: string,
+  model: string,
+  requestBody: Record<string, unknown>,
+  stream = false
+) => {
+  const normalizedModel = normalizeString(model) || 'gemini-2.5-pro';
+  const upstreamBodyBase = {
+    request: requestBody,
+  };
+  const { payload, selection } = await executeGeminiUpstreamRequest(
+    env,
+    userId,
+    normalizedModel,
+    upstreamBodyBase
+  );
+  const responsePayload = normalizeGeminiApiPayload(payload, normalizedModel);
+  const usageRoot = isRecord(responsePayload.usageMetadata)
+    ? (responsePayload.usageMetadata as Record<string, unknown>)
+    : null;
+
+  await upsertUsageEvent(env, userId, {
+    endpoint: stream
+      ? 'POST /v1beta/models/:streamGenerateContent'
+      : 'POST /v1beta/models/:generateContent',
+    model: normalizedModel,
+    source: 'cloudcode-pa.googleapis.com',
+    authIndex: selection.authIndex,
+    failed: false,
+    inputTokens: Number(usageRoot?.promptTokenCount || 0) || undefined,
+    outputTokens: Number(usageRoot?.candidatesTokenCount || 0) || undefined,
+    cachedTokens: Number(usageRoot?.cachedContentTokenCount || 0) || undefined,
+    reasoningTokens: Number(usageRoot?.thoughtsTokenCount || 0) || undefined,
+  });
+
+  return {
+    responsePayload,
+    streamText: stream ? buildSyntheticGeminiStream(responsePayload) : '',
+  };
 };

@@ -7,7 +7,7 @@
     "dev": "vite",
     "dev:pages": "npx wrangler pages dev dist --compatibility-date 2026-03-20",
     "build": "tsc && vite build",
-    "deploy:cloudflare": "npx wrangler pages deploy dist --project-name gptcli",
+    "deploy:cloudflare": "npx wrangler pages deploy dist --project-name gptcli --branch master",
     "db:migrate:local": "npx wrangler d1 migrations apply clipproxy-web-auth --local",
     "db:migrate:remote": "npx wrangler d1 migrations apply clipproxy-web-auth --remote",
     "preview": "vite preview",

@@ -1,6 +1,5 @@
 APP_URL=http://127.0.0.1:8788
-CLI_PROXY_API_BASE=http://127.0.0.1:8317
-CLI_PROXY_MANAGEMENT_KEY=replace-with-cli-proxy-management-key
+DATA_ENCRYPTION_SECRET=replace-with-random-encryption-secret
 GOOGLE_CLIENT_ID=replace-with-google-client-id
 GOOGLE_CLIENT_SECRET=replace-with-google-client-secret
 DISCORD_CLIENT_ID=replace-with-discord-client-id

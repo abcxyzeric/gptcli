@@ -10,8 +10,7 @@ export type AppEnv = {
   DB: D1Database;
   APP_URL?: string;
   SESSION_SECRET?: string;
-  CLI_PROXY_API_BASE?: string;
-  CLI_PROXY_MANAGEMENT_KEY?: string;
+  DATA_ENCRYPTION_SECRET?: string;
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
   DISCORD_CLIENT_ID?: string;

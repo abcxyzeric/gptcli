@@ -35,6 +35,12 @@ import {
   withServerHeaders,
   SERVER_VERSION,
 } from '../../_lib/portal';
+import {
+  authenticateIFlowCookie,
+  getUpstreamOAuthStatus,
+  startUpstreamOAuth,
+  submitUpstreamOAuthCallback,
+} from '../../_lib/upstream-oauth';
 
 const MANAGEMENT_PREFIX = '/v0/management';
 const PROVIDER_ARRAY_PATHS = new Set([
@@ -594,18 +600,50 @@ export const onRequest: PagesFunction<AppEnv> = async (context) => {
       if (!cookie) {
         return fail('Thiếu cookie iFlow để lưu.', 400);
       }
-      const name = `iflow-${Date.now()}.json`;
-      const content = JSON.stringify({ provider: 'iflow', cookie });
-      await upsertPortalAuthFile(context.env, userId, {
-        name,
-        content,
-        provider: 'iflow',
-      });
-      return ok({
-        status: 'ok',
-        saved_path: name,
-        type: 'iflow',
-      });
+      return ok(await authenticateIFlowCookie(context.env, userId, cookie));
+    }
+
+    if (path === 'codex-auth-url' && method === 'GET') {
+      return ok(await startUpstreamOAuth(context.env, userId, 'codex'));
+    }
+
+    if (path === 'anthropic-auth-url' && method === 'GET') {
+      return ok(await startUpstreamOAuth(context.env, userId, 'anthropic'));
+    }
+
+    if (path === 'antigravity-auth-url' && method === 'GET') {
+      return ok(await startUpstreamOAuth(context.env, userId, 'antigravity'));
+    }
+
+    if (path === 'gemini-cli-auth-url' && method === 'GET') {
+      const projectId = String(new URL(context.request.url).searchParams.get('project_id') ?? '').trim();
+      return ok(await startUpstreamOAuth(context.env, userId, 'gemini', { projectId }));
+    }
+
+    if (path === 'qwen-auth-url' && method === 'GET') {
+      return ok(await startUpstreamOAuth(context.env, userId, 'qwen'));
+    }
+
+    if (path === 'kimi-auth-url' && method === 'GET') {
+      return ok(await startUpstreamOAuth(context.env, userId, 'kimi'));
+    }
+
+    if (path === 'get-auth-status' && method === 'GET') {
+      const state = String(new URL(context.request.url).searchParams.get('state') ?? '').trim();
+      return ok(await getUpstreamOAuthStatus(context.env, userId, state));
+    }
+
+    if (path === 'oauth-callback' && method === 'POST') {
+      const body = await readPatchBody(context.request);
+      return ok(
+        await submitUpstreamOAuthCallback(context.env, userId, {
+          provider: String(body.provider ?? '').trim(),
+          redirectUrl: String(body.redirect_url ?? '').trim(),
+          code: String(body.code ?? '').trim(),
+          state: String(body.state ?? '').trim(),
+          error: String(body.error ?? '').trim(),
+        })
+      );
     }
 
     if (
@@ -629,6 +667,13 @@ export const onRequest: PagesFunction<AppEnv> = async (context) => {
     return fail(`Không tìm thấy endpoint management cho "${path}".`, 404);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Management backend Cloudflare gặp lỗi.';
-    return fail(message, 500);
+    const status =
+      typeof error === 'object' &&
+      error !== null &&
+      'status' in error &&
+      typeof (error as { status?: unknown }).status === 'number'
+        ? Number((error as { status?: number }).status)
+        : 500;
+    return fail(message, status);
   }
 };
